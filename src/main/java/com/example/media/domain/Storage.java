@@ -1,0 +1,39 @@
+package com.example.media.domain;
+
+import jakarta.persistence.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+import org.hibernate.annotations.GenericGenerator;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+@Data
+@Builder
+@AllArgsConstructor
+@NoArgsConstructor
+@Entity
+@Table(name = "storages")
+public class Storage {
+    @Id
+    @GeneratedValue(generator = "UUID")
+    @GenericGenerator(name = "UUID", strategy = "org.hibernate.id.UUIDGenerator")
+    @Column(name = "id", updatable = false, nullable = false, columnDefinition = "UUID")
+    private UUID id;
+
+    @Column(name = "provider", nullable = false)
+    private String provider;
+
+    @Column(name = "bucket", nullable = false)
+    private String bucket;
+
+    @Column(name = "endpoint", nullable = false)
+    private String endpoint;
+
+    @Column(name = "is_default", nullable = false)
+    private boolean isDefault;
+
+    @Column(name = "created_at", nullable = false, columnDefinition = "TIMESTAMPTZ")
+    private OffsetDateTime createdAt;
+}
