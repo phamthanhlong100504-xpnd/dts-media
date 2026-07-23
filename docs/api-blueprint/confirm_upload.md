@@ -26,8 +26,8 @@
 ## Response (JSON, 202 Accepted)
 ```json
 {
-  "status": "UPLOADING",
-  "session_id": "<uuid>"
+  "session_id": "<uuid>",
+  "media_id": "<uuid>"
 }
 ```
 
