@@ -1,0 +1,45 @@
+# Build output
+build/
+.gradle/
+out/
+bin/
+
+# IDE
+.idea/
+.vscode/
+*.iws
+*.iml
+*.ipr
+.classpath
+.project
+.settings/
+.factorypath
+.springBeans
+.sts4-cache
+.apt_generated
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Documentation & misc
+*.md
+docs/
+plan/
+sample.sql
+API.md
+
+# Agent & extension
+.agents/
+.antigravity-ide/
