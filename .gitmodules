@@ -1,0 +1,4 @@
+[submodule ".agents"]
+	path = .agents
+	url = https://github.com/phamthanhlong100504-xpnd/doc-manual.git
+	branch = main
