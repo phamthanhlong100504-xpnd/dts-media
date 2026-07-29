@@ -70,7 +70,7 @@ services:
       - kafka
       - minio
     environment:
-      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx192m -XX:+UseContainerSupport"
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx128m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m -Xss512k"
       SPRING_KAFKA_BOOTSTRAP-SERVERS: kafka:9092
       MINIO_ENDPOINT: http://103.75.182.249:9000
       MINIO_ACCESS-KEY: minioadmin

@@ -22,7 +22,8 @@ RUN ./gradlew bootJar --no-daemon -x test
 # ============================
 # Stage 2: Runtime
 # ============================
-FROM eclipse-temurin:25-jre AS runtime
+# FROM eclipse-temurin:25-jre AS runtime
+FROM ibm-semeru-runtimes:open-21-jre AS runtime
 
 WORKDIR /app
 

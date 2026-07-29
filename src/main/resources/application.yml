@@ -20,6 +20,12 @@ spring:
     enabled: true
     locations: classpath:db/migration
     validate-on-migrate: false
+  
+  main:
+    lazy-initialization: true # Chỉ tải các Bean khi cần thiết, giúp giảm RAM lúc khởi động
+    
+  jmx:
+    enabled: false # Tắt JMX (Java Management Extensions) vì không dùng tới
 
   kafka:
     bootstrap-servers: localhost:9092
@@ -39,6 +45,9 @@ spring:
 
 server:
   port: 8080
+  tomcat:
+    threads:
+      max: 50 # Mặc định là 200, với VPS nhỏ chỉ cần 50 luồng là đủ
 
 minio:
   endpoint: http://localhost:9000
