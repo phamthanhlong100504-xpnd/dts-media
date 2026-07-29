@@ -17,7 +17,7 @@ services:
     restart: unless-stopped
     depends_on:
       - zookeeper
-    mem_limit: 300m
+    mem_limit: 320m
     environment:
       KAFKA_HEAP_OPTS: "-Xms128m -Xmx256m"
       KAFKA_BROKER_ID: 1
