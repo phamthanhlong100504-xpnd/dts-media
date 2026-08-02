@@ -53,6 +53,15 @@ jobs:
       - name: Push commit tag
         run: docker push $IMAGE:${{ github.sha }}
 
+      - name: Prepare VPS Directory
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            mkdir -p /dts/media
+
       - name: Copy docker-compose to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
@@ -60,7 +69,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           source: "docker-compose.prod.yml"
-          target: "/dts/media"
+          target: "/dts/media/"
 
       - name: Deploy VPS
         uses: appleboy/ssh-action@v1.2.2
@@ -69,6 +78,7 @@ jobs:
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
+            set -e
             cd /dts/media
             mv -f docker-compose.prod.yml docker-compose.yml
             docker compose pull
