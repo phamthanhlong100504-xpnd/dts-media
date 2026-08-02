@@ -65,12 +65,12 @@ services:
     restart: unless-stopped
     ports:
       - "8080:8080"
-    mem_limit: 320m
+    mem_limit: 400m
     depends_on:
       - kafka
       - minio
     environment:
-      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx256m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m -Xss512k"
+      JAVA_TOOL_OPTIONS: "-Xms64m -Xmx200m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m -Xss512k"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       MINIO_ENDPOINT: http://hoangcn.com:9000
       SPRING_DATASOURCE_URL: jdbc:postgresql://hoangcn.com:5234/media
