@@ -72,11 +72,17 @@ services:
     environment:
       JAVA_TOOL_OPTIONS: "-Xms64m -Xmx200m -XX:+UseSerialGC -XX:MaxMetaspaceSize=128m -Xss512k"
       SPRING_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
-      MINIO_ENDPOINT: http://hoangcn.com:9000
-      SPRING_DATASOURCE_URL: jdbc:postgresql://hoangcn.com:5234/media
-      # MINIO_ENDPOINT: http://103.75.182.249:9000
+      MINIO_ENDPOINT: http://minio:9000
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/media
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+    networks:
+      - default
+      - dts-network
 
 volumes:
   minio_data:
+
+networks:
+  dts-network:
+    external: true
