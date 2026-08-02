@@ -54,10 +54,11 @@ minio:
   access-key: minioadmin
   secret-key: minioadmin
 
-# eureka:
-#   client:
-#     service-url:
-#       defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
-#     enabled: true
-#   instance:
-#     prefer-ip-address: true
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+    enabled: true
+  instance:
+    prefer-ip-address: true
+    ip-address: ${EUREKA_INSTANCE_IP_ADDRESS:127.0.0.1}

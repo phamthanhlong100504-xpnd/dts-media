@@ -76,6 +76,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://103.75.182.249:5434/media
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
+      EUREKA_URI: http://103.75.182.249:8761/eureka/
+      EUREKA_INSTANCE_IP_ADDRESS: 36.50.176.197
     networks:
       - default
 
