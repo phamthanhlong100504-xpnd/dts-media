@@ -53,3 +53,11 @@ minio:
   endpoint: http://localhost:9000
   access-key: minioadmin
   secret-key: minioadmin
+
+# eureka:
+#   client:
+#     service-url:
+#       defaultZone: ${EUREKA_URI:http://localhost:8761/eureka/}
+#     enabled: true
+#   instance:
+#     prefer-ip-address: true
