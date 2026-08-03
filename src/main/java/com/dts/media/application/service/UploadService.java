@@ -3,6 +3,7 @@ package com.dts.media.application.service;
 import com.dts.media.api.form.InitializeUploadForm;
 import com.dts.media.api.response.ConfirmUploadResponse;
 import com.dts.media.api.response.InitializeUploadResponse;
+import com.dts.media.application.dto.UploadVerificationEvent;
 import com.dts.media.application.dto.UploadVerificationMessage;
 import com.dts.media.application.enums.MediaStatus;
 import com.dts.media.application.enums.UploadSessionStatus;
@@ -31,6 +32,9 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 
 @Service
 public class UploadService {
@@ -44,6 +48,7 @@ public class UploadService {
     private final MinioClient minioClient;
     private final MinioClient internalMinioClient;
     private final KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate;
+    private final ApplicationEventPublisher applicationEventPublisher;
 
     public UploadService(UploadPolicyRepository uploadPolicyRepository,
                          UploadSessionRepository uploadSessionRepository,
@@ -51,7 +56,8 @@ public class UploadService {
                          StorageRepository storageRepository,
                          MinioClient minioClient,
                          @Qualifier("internalMinioClient") MinioClient internalMinioClient,
-                         KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate) {
+                         KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate,
+                         ApplicationEventPublisher applicationEventPublisher) {
         this.uploadPolicyRepository = uploadPolicyRepository;
         this.uploadSessionRepository = uploadSessionRepository;
         this.mediaRepository = mediaRepository;
@@ -59,6 +65,7 @@ public class UploadService {
         this.minioClient = minioClient;
         this.internalMinioClient = internalMinioClient;
         this.kafkaTemplate = kafkaTemplate;
+        this.applicationEventPublisher = applicationEventPublisher;
     }
 
 
@@ -188,9 +195,8 @@ public class UploadService {
         session.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         uploadSessionRepository.save(session);
 
-        // Publish to Kafka
-        UploadVerificationMessage message = new UploadVerificationMessage(sessionId, session.getMediaId());
-        kafkaTemplate.send(KafkaConfiguration.TOPIC_UPLOAD_VERIFICATION, sessionId.toString(), message);
+        // Publish Event (will be sent to Kafka after commit)
+        applicationEventPublisher.publishEvent(new UploadVerificationEvent(sessionId, session.getMediaId()));
 
         // Build response
         return ConfirmUploadResponse.builder()
@@ -269,5 +275,11 @@ public class UploadService {
             media.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
             mediaRepository.save(media);
         }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onUploadVerificationEvent(UploadVerificationEvent event) {
+        UploadVerificationMessage message = new UploadVerificationMessage(event.getSessionId(), event.getMediaId());
+        kafkaTemplate.send(KafkaConfiguration.TOPIC_UPLOAD_VERIFICATION, event.getSessionId().toString(), message);
     }
 }
