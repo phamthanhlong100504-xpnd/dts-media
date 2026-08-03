@@ -139,6 +139,11 @@ public class UploadService {
                             .expiry((int) Duration.ofMinutes(PRESIGNED_URL_EXPIRY_MINUTES).getSeconds())
                             .build()
             );
+            
+            // Rewrite internal docker network URL to public URL for frontend access
+            if (presignedUrl != null && presignedUrl.contains("http://minio:9000")) {
+                presignedUrl = presignedUrl.replace("http://minio:9000", "http://hoangcn.com:9000");
+            }
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate presigned URL", e);
         }

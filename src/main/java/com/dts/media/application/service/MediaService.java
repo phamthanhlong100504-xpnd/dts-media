@@ -56,6 +56,9 @@ public class MediaService {
                             .expiry((int) Duration.ofMinutes(GET_URL_EXPIRY_MINUTES).getSeconds())
                             .build()
             );
+            if (downloadUrl != null && downloadUrl.contains("http://minio:9000")) {
+                downloadUrl = downloadUrl.replace("http://minio:9000", "http://hoangcn.com:9000");
+            }
         } catch (Exception e) {
             System.err.println("Failed to generate presigned GET URL: " + e.getMessage());
         }
@@ -91,6 +94,9 @@ public class MediaService {
                                     .expiry((int) Duration.ofMinutes(GET_URL_EXPIRY_MINUTES).getSeconds())
                                     .build()
                     );
+                    if (downloadUrl != null && downloadUrl.contains("http://minio:9000")) {
+                        downloadUrl = downloadUrl.replace("http://minio:9000", "http://hoangcn.com:9000");
+                    }
                 } catch (Exception e) {
                     // Ignore or log error
                 }
