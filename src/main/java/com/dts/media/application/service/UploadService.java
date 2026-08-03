@@ -33,7 +33,6 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Qualifier;
 
 @Service
-@Service
 public class UploadService {
 
     private static final int PRESIGNED_URL_EXPIRY_MINUTES = 15;
