@@ -30,10 +30,10 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.beans.factory.annotation.Qualifier;
 
 @Service
-@RequiredArgsConstructor
+@Service
 public class UploadService {
 
     private static final int PRESIGNED_URL_EXPIRY_MINUTES = 15;
@@ -43,10 +43,26 @@ public class UploadService {
     private final StorageRepository storageRepository;
     private final UploadPolicyRepository uploadPolicyRepository;
     private final MinioClient minioClient;
+    private final MinioClient internalMinioClient;
     private final KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate;
 
-    @Value("${minio.public-endpoint}")
-    private String minioPublicEndpoint;
+    public UploadService(UploadPolicyRepository uploadPolicyRepository,
+                         UploadSessionRepository uploadSessionRepository,
+                         MediaRepository mediaRepository,
+                         StorageRepository storageRepository,
+                         MinioClient minioClient,
+                         @Qualifier("internalMinioClient") MinioClient internalMinioClient,
+                         KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate) {
+        this.uploadPolicyRepository = uploadPolicyRepository;
+        this.uploadSessionRepository = uploadSessionRepository;
+        this.mediaRepository = mediaRepository;
+        this.storageRepository = storageRepository;
+        this.minioClient = minioClient;
+        this.internalMinioClient = internalMinioClient;
+        this.kafkaTemplate = kafkaTemplate;
+    }
+
+
 
     @Transactional
     public InitializeUploadResponse initializeUpload(InitializeUploadForm form, String uploaderId) {
@@ -143,11 +159,6 @@ public class UploadService {
                             .expiry((int) Duration.ofMinutes(PRESIGNED_URL_EXPIRY_MINUTES).getSeconds())
                             .build()
             );
-            
-            // Rewrite internal docker network URL to public URL for frontend access
-            if (presignedUrl != null && presignedUrl.contains("http://minio:9000")) {
-                presignedUrl = presignedUrl.replace("http://minio:9000", minioPublicEndpoint);
-            }
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate presigned URL", e);
         }
@@ -221,7 +232,7 @@ public class UploadService {
         }
 
         try {
-            StatObjectResponse stat = minioClient.statObject(
+            StatObjectResponse stat = internalMinioClient.statObject(
                     StatObjectArgs.builder()
                             .bucket(storage.getBucket())
                             .object(media.getObjectKey())

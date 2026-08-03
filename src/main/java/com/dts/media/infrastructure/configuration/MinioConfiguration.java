@@ -11,6 +11,9 @@ public class MinioConfiguration {
     @Value("${minio.endpoint}")
     private String endpoint;
 
+    @Value("${minio.internal-endpoint}")
+    private String internalEndpoint;
+
     @Value("${minio.access-key}")
     private String accessKey;
 
@@ -21,6 +24,14 @@ public class MinioConfiguration {
     public MinioClient minioClient() {
         return MinioClient.builder()
                 .endpoint(endpoint)
+                .credentials(accessKey, secretKey)
+                .build();
+    }
+
+    @Bean
+    public MinioClient internalMinioClient() {
+        return MinioClient.builder()
+                .endpoint(internalEndpoint)
                 .credentials(accessKey, secretKey)
                 .build();
     }
