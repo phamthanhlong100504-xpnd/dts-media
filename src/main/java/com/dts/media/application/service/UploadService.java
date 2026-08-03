@@ -30,6 +30,7 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
+import org.springframework.beans.factory.annotation.Value;
 
 @Service
 @RequiredArgsConstructor
@@ -43,6 +44,9 @@ public class UploadService {
     private final UploadPolicyRepository uploadPolicyRepository;
     private final MinioClient minioClient;
     private final KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate;
+
+    @Value("${minio.public-endpoint}")
+    private String minioPublicEndpoint;
 
     @Transactional
     public InitializeUploadResponse initializeUpload(InitializeUploadForm form, String uploaderId) {
@@ -142,7 +146,7 @@ public class UploadService {
             
             // Rewrite internal docker network URL to public URL for frontend access
             if (presignedUrl != null && presignedUrl.contains("http://minio:9000")) {
-                presignedUrl = presignedUrl.replace("http://minio:9000", "http://hoangcn.com:9000");
+                presignedUrl = presignedUrl.replace("http://minio:9000", minioPublicEndpoint);
             }
         } catch (Exception e) {
             throw new RuntimeException("Failed to generate presigned URL", e);

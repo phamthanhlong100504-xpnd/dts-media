@@ -19,6 +19,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import com.dts.media.api.request.UpdateMediaRequest;
+import org.springframework.beans.factory.annotation.Value;
 
 @Service
 @RequiredArgsConstructor
@@ -29,6 +30,9 @@ public class MediaService {
     private final MediaRepository mediaRepository;
     private final StorageRepository storageRepository;
     private final MinioClient minioClient;
+
+    @Value("${minio.public-endpoint}")
+    private String minioPublicEndpoint;
 
     @Transactional(readOnly = true)
     public MediaResponse getMediaDetail(UUID mediaId) {
@@ -57,7 +61,7 @@ public class MediaService {
                             .build()
             );
             if (downloadUrl != null && downloadUrl.contains("http://minio:9000")) {
-                downloadUrl = downloadUrl.replace("http://minio:9000", "http://hoangcn.com:9000");
+                downloadUrl = downloadUrl.replace("http://minio:9000", minioPublicEndpoint);
             }
         } catch (Exception e) {
             System.err.println("Failed to generate presigned GET URL: " + e.getMessage());
@@ -95,7 +99,7 @@ public class MediaService {
                                     .build()
                     );
                     if (downloadUrl != null && downloadUrl.contains("http://minio:9000")) {
-                        downloadUrl = downloadUrl.replace("http://minio:9000", "http://hoangcn.com:9000");
+                        downloadUrl = downloadUrl.replace("http://minio:9000", minioPublicEndpoint);
                     }
                 } catch (Exception e) {
                     // Ignore or log error
