@@ -5,7 +5,7 @@ services:
     image: confluentinc/cp-zookeeper:7.5.0
     container_name: media-zookeeper
     restart: unless-stopped
-    mem_limit: 128m
+    mem_limit: 256m
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -33,7 +33,7 @@ services:
     image: minio/minio:latest
     container_name: media-minio
     restart: unless-stopped
-    mem_limit: 128m
+    mem_limit: 256m
     ports:
       - "9000:9000"
       - "9001:9001"
