@@ -22,6 +22,7 @@ import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -36,6 +37,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+@Slf4j
 @Service
 public class UploadService {
 
@@ -183,18 +185,22 @@ public class UploadService {
 
     @Transactional
     public ConfirmUploadResponse confirmUpload(UUID sessionId, String uploaderId) {
+        log.info("confirmUpload called for sessionId: {}, uploaderId: {}", sessionId, uploaderId);
         UploadSession session = uploadSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Upload session not found"));
 
         if (session.getStatus() != UploadSessionStatus.PENDING) {
+            log.warn("Upload session not in PENDING state. Current state: {}", session.getStatus());
             throw new IllegalStateException("Upload session not in PENDING state");
         }
 
         // Lock session
+        log.info("Changing session status to UPLOADING for sessionId: {}", sessionId);
         session.setStatus(UploadSessionStatus.UPLOADING);
         session.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
         uploadSessionRepository.save(session);
 
+        log.info("Publishing UploadVerificationEvent for sessionId: {}", sessionId);
         // Publish Event (will be sent to Kafka after commit)
         applicationEventPublisher.publishEvent(new UploadVerificationEvent(sessionId, session.getMediaId()));
 
@@ -207,13 +213,16 @@ public class UploadService {
 
     @Transactional
     public void verifyUpload(UUID sessionId, UUID mediaId) {
+        log.info("verifyUpload started for sessionId: {}, mediaId: {}", sessionId, mediaId);
         UploadSession session = uploadSessionRepository.findById(sessionId).orElse(null);
         if (session == null) {
+            log.error("verifyUpload failed: Session not found for sessionId: {}", sessionId);
             return;
         }
 
         Media media = mediaRepository.findById(mediaId).orElse(null);
         if (media == null) {
+            log.error("verifyUpload failed: Media not found for mediaId: {}", mediaId);
             session.setStatus(UploadSessionStatus.FAILED);
             session.setFailureReason("Media entity not found");
             session.setFinishedAt(OffsetDateTime.now(ZoneOffset.UTC));
@@ -224,6 +233,7 @@ public class UploadService {
 
         Storage storage = storageRepository.findById(media.getStorageId()).orElse(null);
         if (storage == null) {
+            log.error("verifyUpload failed: Storage not found for storageId: {}", media.getStorageId());
             session.setStatus(UploadSessionStatus.FAILED);
             session.setFailureReason("Storage configuration not found");
             session.setFinishedAt(OffsetDateTime.now(ZoneOffset.UTC));
@@ -237,6 +247,7 @@ public class UploadService {
         }
 
         try {
+            log.info("Calling internalMinioClient.statObject for bucket: {}, objectKey: {}", storage.getBucket(), media.getObjectKey());
             StatObjectResponse stat = internalMinioClient.statObject(
                     StatObjectArgs.builder()
                             .bucket(storage.getBucket())
@@ -244,7 +255,10 @@ public class UploadService {
                             .build()
             );
 
+            log.info("statObject success. File size in MinIO: {}, Expected size: {}", stat.size(), media.getSizeBytes());
+
             if (stat.size() != media.getSizeBytes()) {
+                log.warn("File size mismatch! Updating status to FAILED.");
                 session.setStatus(UploadSessionStatus.FAILED);
                 session.setFailureReason(String.format("File size mismatch: expected %d bytes, got %d bytes", media.getSizeBytes(), stat.size()));
                 session.setFinishedAt(OffsetDateTime.now(ZoneOffset.UTC));
@@ -255,6 +269,7 @@ public class UploadService {
                 media.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
                 mediaRepository.save(media);
             } else {
+                log.info("File size matched. Updating status to COMPLETED and READY.");
                 session.setStatus(UploadSessionStatus.COMPLETED);
                 session.setFinishedAt(OffsetDateTime.now(ZoneOffset.UTC));
                 session.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
@@ -264,7 +279,9 @@ public class UploadService {
                 media.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
                 mediaRepository.save(media);
             }
+            log.info("verifyUpload completed successfully for sessionId: {}", sessionId);
         } catch (Exception e) {
+            log.error("verifyUpload exception while accessing MinIO: {}", e.getMessage(), e);
             session.setStatus(UploadSessionStatus.FAILED);
             session.setFailureReason("Object not found or inaccessible on storage provider: " + e.getMessage());
             session.setFinishedAt(OffsetDateTime.now(ZoneOffset.UTC));
@@ -279,6 +296,7 @@ public class UploadService {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
     public void onUploadVerificationEvent(UploadVerificationEvent event) {
+        log.info("Transaction committed. Sending Kafka message for sessionId: {}", event.getSessionId());
         UploadVerificationMessage message = new UploadVerificationMessage(event.getSessionId(), event.getMediaId());
         kafkaTemplate.send(KafkaConfiguration.TOPIC_UPLOAD_VERIFICATION, event.getSessionId().toString(), message);
     }
