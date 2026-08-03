@@ -18,8 +18,8 @@ public class UploadVerificationConsumer {
     private final UploadService uploadService;
 
     @KafkaListener(
-            topics = KafkaConfiguration.TOPIC_UPLOAD_VERIFICATION,
-            groupId = "media-upload-worker",
+            topics = "${kafka.topics.upload-verification:media-upload-verification}",
+            groupId = "${spring.kafka.consumer.group-id:media-upload-worker}",
             containerFactory = "kafkaListenerContainerFactory"
     )
     public void consume(UploadVerificationMessage message) {

@@ -23,6 +23,7 @@ import io.minio.StatObjectResponse;
 import io.minio.http.Method;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,8 +42,6 @@ import org.springframework.transaction.event.TransactionalEventListener;
 @Service
 public class UploadService {
 
-    private static final int PRESIGNED_URL_EXPIRY_MINUTES = 15;
-
     private final MediaRepository mediaRepository;
     private final UploadSessionRepository uploadSessionRepository;
     private final StorageRepository storageRepository;
@@ -51,6 +50,12 @@ public class UploadService {
     private final MinioClient internalMinioClient;
     private final KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate;
     private final ApplicationEventPublisher applicationEventPublisher;
+
+    @Value("${media.url.put-expiry-minutes:15}")
+    private int putUrlExpiryMinutes;
+
+    @Value("${kafka.topics.upload-verification:media-upload-verification}")
+    private String topicUploadVerification;
 
     public UploadService(UploadPolicyRepository uploadPolicyRepository,
                          UploadSessionRepository uploadSessionRepository,
@@ -164,7 +169,7 @@ public class UploadService {
                             .method(Method.PUT)
                             .bucket(storage.getBucket())
                             .object(objectKey)
-                            .expiry((int) Duration.ofMinutes(PRESIGNED_URL_EXPIRY_MINUTES).getSeconds())
+                            .expiry((int) Duration.ofMinutes(putUrlExpiryMinutes).getSeconds())
                             .build()
             );
         } catch (Exception e) {
@@ -178,7 +183,7 @@ public class UploadService {
                 .presignedUrl(presignedUrl)
                 .objectKey(objectKey)
                 .expiredAt(OffsetDateTime.now(ZoneOffset.UTC)
-                        .plusMinutes(PRESIGNED_URL_EXPIRY_MINUTES)
+                        .plusMinutes(putUrlExpiryMinutes)
                         .format(DateTimeFormatter.ISO_OFFSET_DATE_TIME))
                 .build();
     }
@@ -298,6 +303,6 @@ public class UploadService {
     public void onUploadVerificationEvent(UploadVerificationEvent event) {
         log.info("Transaction committed. Sending Kafka message for sessionId: {}", event.getSessionId());
         UploadVerificationMessage message = new UploadVerificationMessage(event.getSessionId(), event.getMediaId());
-        kafkaTemplate.send(KafkaConfiguration.TOPIC_UPLOAD_VERIFICATION, event.getSessionId().toString(), message);
+        kafkaTemplate.send(topicUploadVerification, event.getSessionId().toString(), message);
     }
 }

@@ -18,14 +18,15 @@ import java.util.Map;
 @Configuration
 public class KafkaConfiguration {
 
-    public static final String TOPIC_UPLOAD_VERIFICATION = "media-upload-verification";
+    @Value("${kafka.topics.upload-verification:media-upload-verification}")
+    private String topicUploadVerification;
 
     @Value("${spring.kafka.bootstrap-servers}")
     private String bootstrapServers;
 
     @Bean
     public NewTopic uploadVerificationTopic() {
-        return new NewTopic(TOPIC_UPLOAD_VERIFICATION, 3, (short) 1);
+        return new NewTopic(topicUploadVerification, 3, (short) 1);
     }
 
     @Bean

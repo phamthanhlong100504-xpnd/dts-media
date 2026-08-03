@@ -25,7 +25,8 @@ import org.springframework.beans.factory.annotation.Value;
 @RequiredArgsConstructor
 public class MediaService {
 
-    private static final int GET_URL_EXPIRY_MINUTES = 60;
+    @Value("${media.url.get-expiry-minutes:60}")
+    private int getUrlExpiryMinutes;
 
     private final MediaRepository mediaRepository;
     private final StorageRepository storageRepository;
@@ -56,7 +57,7 @@ public class MediaService {
                             .method(Method.GET)
                             .bucket(storage.getBucket())
                             .object(media.getObjectKey())
-                            .expiry((int) Duration.ofMinutes(GET_URL_EXPIRY_MINUTES).getSeconds())
+                            .expiry((int) Duration.ofMinutes(getUrlExpiryMinutes).getSeconds())
                             .build()
             );
         } catch (Exception e) {
@@ -91,7 +92,7 @@ public class MediaService {
                                     .method(Method.GET)
                                     .bucket(storage.getBucket())
                                     .object(media.getObjectKey())
-                                    .expiry((int) Duration.ofMinutes(GET_URL_EXPIRY_MINUTES).getSeconds())
+                                    .expiry((int) Duration.ofMinutes(getUrlExpiryMinutes).getSeconds())
                                     .build()
                     );
                 } catch (Exception e) {
