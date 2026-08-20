@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
   packages: write
+  checks: write
+  pull-requests: read
 
 env:
   IMAGE: ghcr.io/${{ github.repository_owner }}/media-service
@@ -29,10 +31,25 @@ jobs:
       - name: Cache Gradle
         uses: gradle/actions/setup-gradle@v4
 
-      - name: Build Jar
+      - name: Build & Test
         run: |
+          export GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx512m"
           chmod +x gradlew
-          ./gradlew clean bootJar
+          ./gradlew clean test bootJar
+
+      - name: Publish Test Results
+        uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: "build/test-results/**/*.xml"
+
+      - name: Upload Test Report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gradle-test-report
+          path: build/reports/tests/test/
+          retention-days: 7
 
       - name: Login GHCR
         uses: docker/login-action@v3
@@ -79,6 +96,7 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
             set -e
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /dts/media
             mv -f docker-compose.prod.yml docker-compose.yml
             docker compose pull
