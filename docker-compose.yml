@@ -12,7 +12,7 @@ services:
 
   kafka:
     image: confluentinc/cp-kafka:7.5.0
-    container_name: media-kafka
+    container_name: kafka
     ports:
       - "9092:9092"
     depends_on:
