@@ -1,4 +1,4 @@
-﻿package com.dts.media.api.controller;
+package com.dts.media.api.controller;
 
 import com.dts.media.api.form.InitializeUploadForm;
 import com.dts.media.api.response.ConfirmUploadResponse;
@@ -48,13 +48,13 @@ public class UploadController {
         }
         try {
             String token = authHeader.substring(7);
-            String[] parts = token.split("\.");
+            String[] parts = token.split("\\.");
             if (parts.length < 2) {
                 throw new IllegalArgumentException("Invalid JWT format");
             }
             String payload = new String(Base64.getUrlDecoder().decode(parts[1]), StandardCharsets.UTF_8);
             
-            Pattern pattern = Pattern.compile(""sub"\s*:\s*"([^"]+)"");
+            Pattern pattern = Pattern.compile("\"sub\"\\s*:\\s*\"([^\"]+)\"");
             Matcher matcher = pattern.matcher(payload);
             if (matcher.find()) {
                 return matcher.group(1);
