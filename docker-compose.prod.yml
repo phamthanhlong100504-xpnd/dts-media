@@ -45,7 +45,7 @@ services:
       - minio_data:/data
 
   minio-mc:
-    image: quay.io/minio/mc:latest
+    image: minio/mc:latest
     container_name: media-minio-mc
     mem_limit: 64m
     depends_on:
