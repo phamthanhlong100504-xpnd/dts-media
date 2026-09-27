@@ -85,6 +85,7 @@ jobs:
           EOF
           docker build -t my-minio:latest ./minio-build
           docker save my-minio:latest -o minio.tar
+          sudo chmod 777 minio.tar
           
       - name: Prepare VPS Directory
         uses: appleboy/ssh-action@v1.2.2
