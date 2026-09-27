@@ -96,9 +96,15 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
             set -e
-            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /dts/media
             mv -f docker-compose.prod.yml docker-compose.yml
-            docker compose pull
+            # Pull third-party images anonymously first to avoid Quay.io auth conflicts
+            docker logout ghcr.io || true
+            docker compose pull minio zookeeper kafka || true
+            
+            # Login to GHCR to pull our private images
+            echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            docker compose pull media-service
+            
             docker compose up -d
             docker image prune -a -f
