@@ -72,8 +72,8 @@ jobs:
 
       - name: Prepare MinIO Image
         run: |
-          docker pull quay.io/minio/minio:latest
-          docker save quay.io/minio/minio:latest -o minio.tar
+          docker pull bitnami/minio:latest
+          docker save bitnami/minio:latest -o minio.tar
           
       - name: Prepare VPS Directory
         uses: appleboy/ssh-action@v1.2.2
