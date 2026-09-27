@@ -44,19 +44,6 @@ services:
     volumes:
       - minio_data:/data
 
-  minio-mc:
-    image: minio/mc:latest
-    container_name: media-minio-mc
-    mem_limit: 64m
-    depends_on:
-      - minio
-    entrypoint: >
-      /bin/sh -c "
-      until (/usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin) do echo 'Waiting...' && sleep 1; done;
-      /usr/bin/mc mb myminio/media || true;
-      /usr/bin/mc anonymous set public myminio/media || true;
-      exit 0;
-      "
 
   # === Media Service (pull từ GHCR) ===
   media-service:
