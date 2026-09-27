@@ -98,16 +98,26 @@ jobs:
             set -e
             cd /dts/media
             mv -f docker-compose.prod.yml docker-compose.yml
-            # Pull third-party images anonymously first to avoid Quay.io auth conflicts
-            docker logout ghcr.io || true
-            docker compose pull minio zookeeper kafka || true
+            
+            # Create a local Dockerfile to build MinIO from source and bypass all registry blocks!
+            mkdir -p minio-build
+            cat << 'EOF' > minio-build/Dockerfile
+            FROM debian:bullseye-slim
+            RUN apt-get update && apt-get install -y curl && rm -rf /var/lib/apt/lists/*
+            RUN curl -O https://dl.min.io/server/minio/release/linux-amd64/minio && \
+                chmod +x minio && \
+                mv minio /usr/local/bin/
+            CMD ["minio", "server", "/data", "--console-address", ":9001"]
+            EOF
             
             # Login to GHCR to pull our private images
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             docker compose pull media-service
             
-            # LOGOUT to prevent GITHUB_TOKEN from being used for public images (like linuxserver) on GHCR
+            # Pull other third-party images
             docker logout ghcr.io || true
+            docker compose pull zookeeper kafka || true
             
-            docker compose up -d
+            # Build MinIO and start all services
+            docker compose up -d --build
             docker image prune -a -f

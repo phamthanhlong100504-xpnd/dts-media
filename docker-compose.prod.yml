@@ -30,7 +30,7 @@ services:
 
   # === MinIO (Object Storage) ===
   minio:
-    image: lscr.io/linuxserver/minio:latest
+    build: ./minio-build
     container_name: media-minio
     restart: unless-stopped
     mem_limit: 256m
