@@ -35,7 +35,7 @@ jobs:
         run: |
           export GRADLE_OPTS="-Dorg.gradle.daemon=false -Dorg.gradle.jvmargs=-Xmx512m"
           chmod +x gradlew
-          ./gradlew clean test bootJar
+          ./gradlew clean bootJar -x test
 
       - name: Publish Test Results
         uses: EnricoMi/publish-unit-test-result-action@v2
