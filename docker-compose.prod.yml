@@ -30,7 +30,7 @@ services:
 
   # === MinIO (Object Storage) ===
   minio:
-    build: ./minio-build
+    image: minio/minio:latest
     container_name: media-minio
     restart: unless-stopped
     mem_limit: 256m

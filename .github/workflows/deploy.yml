@@ -70,6 +70,11 @@ jobs:
       - name: Push commit tag
         run: docker push $IMAGE:${{ github.sha }}
 
+      - name: Prepare MinIO Image
+        run: |
+          docker pull minio/minio:latest
+          docker save minio/minio:latest -o minio.tar
+          
       - name: Prepare VPS Directory
         uses: appleboy/ssh-action@v1.2.2
         with:
@@ -79,13 +84,13 @@ jobs:
           script: |
             mkdir -p /dts/media
 
-      - name: Copy docker-compose to VPS
+      - name: Copy files to VPS
         uses: appleboy/scp-action@v0.1.7
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
-          source: "docker-compose.prod.yml"
+          source: "docker-compose.prod.yml,minio.tar"
           target: "/dts/media/"
 
       - name: Deploy VPS
@@ -99,18 +104,9 @@ jobs:
             cd /dts/media
             mv -f docker-compose.prod.yml docker-compose.yml
             
-            # Create a local Dockerfile to build MinIO from source and bypass all registry blocks!
-            mkdir -p minio-build
-            cat << 'EOF' > minio-build/Dockerfile
-            FROM golang:alpine as builder
-            RUN apk add --no-cache git
-            RUN go install github.com/minio/minio@latest
-            
-            FROM alpine:latest
-            RUN apk add --no-cache ca-certificates tzdata
-            COPY --from=builder /go/bin/minio /usr/local/bin/minio
-            CMD ["minio", "server", "/data", "--console-address", ":9001"]
-            EOF
+            # Load MinIO image directly from tarball! No compilation, no rate limits!
+            docker load -i minio.tar
+            rm -f minio.tar
             
             # Login to GHCR to pull our private images
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -120,6 +116,6 @@ jobs:
             docker logout ghcr.io || true
             docker compose pull zookeeper kafka || true
             
-            # Build MinIO and start all services
-            docker compose up -d --build
+            # Start all services
+            docker compose up -d
             docker image prune -a -f
