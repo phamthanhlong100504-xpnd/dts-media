@@ -70,10 +70,21 @@ jobs:
       - name: Push commit tag
         run: docker push $IMAGE:${{ github.sha }}
 
-      - name: Prepare MinIO Image
+      - name: Build MinIO Image from Source
         run: |
-          docker pull bitnami/minio:latest
-          docker save bitnami/minio:latest -o minio.tar
+          mkdir -p minio-build
+          cat << 'EOF' > minio-build/Dockerfile
+          FROM golang:alpine as builder
+          RUN apk add --no-cache git
+          RUN go install github.com/minio/minio@latest
+          
+          FROM alpine:latest
+          RUN apk add --no-cache ca-certificates tzdata
+          COPY --from=builder /go/bin/minio /usr/local/bin/minio
+          CMD ["minio", "server", "/data", "--console-address", ":9001"]
+          EOF
+          docker build -t my-minio:latest ./minio-build
+          docker save my-minio:latest -o minio.tar
           
       - name: Prepare VPS Directory
         uses: appleboy/ssh-action@v1.2.2

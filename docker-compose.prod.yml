@@ -30,7 +30,7 @@ services:
 
   # === MinIO (Object Storage) ===
   minio:
-    image: bitnami/minio:latest
+    image: my-minio:latest
     container_name: media-minio
     restart: unless-stopped
     mem_limit: 256m
