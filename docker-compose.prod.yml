@@ -30,7 +30,7 @@ services:
 
   # === MinIO (Object Storage) ===
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     container_name: media-minio
     restart: unless-stopped
     mem_limit: 256m
@@ -45,7 +45,7 @@ services:
       - minio_data:/data
 
   minio-mc:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     container_name: media-minio-mc
     mem_limit: 64m
     depends_on:
