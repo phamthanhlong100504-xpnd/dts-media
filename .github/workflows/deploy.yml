@@ -102,11 +102,13 @@ jobs:
             # Create a local Dockerfile to build MinIO from source and bypass all registry blocks!
             mkdir -p minio-build
             cat << 'EOF' > minio-build/Dockerfile
-            FROM ubuntu:22.04
-            RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
-            RUN curl -O https://dl.min.io/server/minio/release/linux-amd64/minio && \
-                chmod +x minio && \
-                mv minio /usr/local/bin/
+            FROM golang:1.23-alpine as builder
+            RUN apk add --no-cache git
+            RUN go install github.com/minio/minio@latest
+            
+            FROM alpine:latest
+            RUN apk add --no-cache ca-certificates tzdata
+            COPY --from=builder /go/bin/minio /usr/local/bin/minio
             CMD ["minio", "server", "/data", "--console-address", ":9001"]
             EOF
             
