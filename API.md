@@ -74,7 +74,7 @@ Dùng để khai báo thông tin file và lấy đường dẫn Presigned PUT UR
 - **Endpoint**: `POST /api/v1/media/uploads/initialize`
 - **Headers**:
   - `Content-Type: application/json`
-  - `X-User-Id: <UUID>` (ID người dùng đăng nhập)
+  - `Authorization: Bearer <JWT_TOKEN>` (Token người dùng lấy từ Identity Service)
 - **Request Body**:
   ```json
   {
@@ -117,7 +117,7 @@ Gọi sau khi tải thành công ở API 2 để báo Backend biết và chạy 
 
 - **Endpoint**: `POST /api/v1/media/uploads/{sessionId}/confirm`
 - **Headers**:
-  - `X-User-Id: <UUID>`
+  - `Authorization: Bearer <JWT_TOKEN>`
 - **Response (`202 Accepted`)**:
   ```json
   {
@@ -178,25 +178,28 @@ FILE_PATH="C:/Users/Dai/Desktop/test_image.png"
 FILE_NAME=$(basename "$FILE_PATH")
 FILE_SIZE=$(stat -c%s "$FILE_PATH")
 
-# 2. Gọi API Initialize (API 1)
+# 2. Khai báo token
+TOKEN="<ACCESS_TOKEN_CUA_BAN>"
+
+# 3. Gọi API Initialize (API 1)
 RESPONSE=$(curl -s -X POST http://localhost:8080/api/v1/media/uploads/initialize \
   -H "Content-Type: application/json" \
-  -H "X-User-Id: 0190ce1a-0000-7000-8000-000000000002" \
+  -H "Authorization: Bearer $TOKEN" \
   -d "{\"fileName\": \"$FILE_NAME\", \"sizeBytes\": $FILE_SIZE, \"mimeType\": \"image/png\", \"visibility\": \"PRIVATE\", \"targetType\": \"USER\"}")
 
 PRESIGNED_URL=$(echo $RESPONSE | grep -o '"presignedUrl":"[^"]*' | grep -o '[^"]*$')
 SESSION_ID=$(echo $RESPONSE | grep -o '"sessionId":"[^"]*' | grep -o '[^"]*$')
 
-# 3. Đẩy file lên MinIO (API 2)
+# 4. Đẩy file lên MinIO (API 2)
 curl -X PUT "$PRESIGNED_URL" -H "Content-Type: image/png" --data-binary "@$FILE_PATH"
 
-# 4. Xác nhận Upload (API 3)
+# 5. Xác nhận Upload (API 3)
 CONFIRM_RES=$(curl -s -X POST "http://localhost:8080/api/v1/media/uploads/$SESSION_ID/confirm" \
-  -H "X-User-Id: 0190ce1a-0000-7000-8000-000000000002")
+  -H "Authorization: Bearer $TOKEN")
 
 MEDIA_ID=$(echo $CONFIRM_RES | grep -o '"mediaId":"[^"]*' | grep -o '[^"]*$')
 
-# 5. Đợi 1 giây cho Worker xử lý ngầm rồi Lấy Link Xem File (API 4)
+# 6. Đợi 1 giây cho Worker xử lý ngầm rồi Lấy Link Xem File (API 4)
 sleep 1
 curl -s -X GET "http://localhost:8080/api/v1/media/$MEDIA_ID"
 ```
