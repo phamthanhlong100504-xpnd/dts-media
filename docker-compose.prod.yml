@@ -65,6 +65,8 @@ services:
       MINIO_SECRET_KEY: minioadmin
       EUREKA_URI: http://103.20.96.85:8761/eureka/
       EUREKA_INSTANCE_IP_ADDRESS: 36.50.176.197
+    extra_hosts:
+      - "103.20.96.85:host-gateway"
     networks:
       - default
 
