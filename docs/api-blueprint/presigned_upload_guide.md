@@ -1,157 +1,51 @@
-# Hướng Dẫn Tích Hợp Upload File Cho Client (Web / Mobile)
+# Client guide — upload file qua presigned URL
 
-Tài liệu này hướng dẫn lập trình viên Client (Frontend Web, Mobile App, Third-party Integration) cách thực hiện tải file (Upload Media) lên hệ thống thông qua mô hình **Presigned URL (Tải trực tiếp không qua Server)**.
+## Luồng
 
----
-
-## 📋 Tổng Quan Luồng Xử Lý (3 Bước)
-
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant M as Media API
+    participant S as MinIO
+    participant K as Kafka
+    participant W as Worker
+    C->>M: Initialize metadata và Bearer
+    M-->>C: 201, sessionId, mediaId, PUT URL
+    C->>S: PUT binary theo URL đã ký
+    S-->>C: Upload thành công
+    C->>M: Confirm sessionId và Bearer
+    M->>K: Event sau commit
+    M-->>C: 202 Accepted
+    K->>W: Upload verification message
+    W->>S: statObject và so size
+    Note over W: Ghi READY hoặc FAILED vào database
+    C->>M: GET mediaId
+    M-->>C: Metadata READY và GET URL
 ```
-[ Client ] ------------ (1) POST /initialize ------------> [ Media Service ]
-    |                                                            |
-    |                                                    - Validate Policy & Quota
-    |<----------- Presigned PUT URL + SessionID ------------------ - Sinh Presigned URL
-    |
-    |------------------ (2) PUT direct file ---------------------> [ MinIO / S3 Storage ]
-    |
-    |------------------ (3) POST /{sessionId}/confirm ----------> [ Media Service ]
-                                                                 - Đưa vào hàng đợi xác thực ngầm
-```
 
----
+## 1. Initialize
 
-## 🛠️ Chi Tiết Các Bước Thực Hiện
+POST /api/v1/media/uploads/initialize với Content-Type: application/json và Authorization: Bearer <access-token>. Xem [request/response](initialize_upload.md). Với ảnh biển báo dùng targetType TRAFFIC_SIGN, visibility PUBLIC, mimeType image/webp và sizeBytes của file thật. Không dùng X-User-Id để thay header Authorization.
 
-### Bước 1: Khởi tạo phiên upload (Initialize Upload)
+## 2. PUT trực tiếp
 
-Client gửi thông tin metadata của file lên Media Service để xin cấp quyền và presigned URL.
-
-- **Endpoint**: `POST /api/v1/media/uploads/initialize`
-- **Headers**:
-  - `Content-Type: application/json`
-  - `X-User-Id: <UUID-nguoi-dung-dang-nhap>`
-- **Body**:
-  ```json
-  {
-    "fileName": "avatar_profile.png",
-    "sizeBytes": 2097152,
-    "mimeType": "image/png",
-    "visibility": "PRIVATE",
-    "targetType": "USER"
-  }
-  ```
-- **Response thành công (`201 Created`)**:
-  ```json
-  {
-    "sessionId": "0190ce1a-3000-7000-8000-000000000001",
-    "mediaId": "0190ce1a-3000-7000-8000-000000000002",
-    "presignedUrl": "http://localhost:9000/media/uploads/2026/07/23/0190ce1a-3000-7000-8000-000000000002.png?X-Amz-Algorithm=...",
-    "objectKey": "uploads/2026/07/23/0190ce1a-3000-7000-8000-000000000002.png",
-    "expiredAt": "2026-07-23T14:30:00Z"
-  }
-  ```
-
-> ⚠️ **Lưu ý**: Giữ lại `sessionId` để dùng cho Bước 3 và `presignedUrl` để dùng cho Bước 2.
-
----
-
-### Bước 2: Tải file trực tiếp lên Storage (Direct Upload)
-
-Client dùng `presignedUrl` nhận được ở Bước 1 để đẩy file binary thô trực tiếp lên MinIO/S3. **Không gửi request này qua Server Backend.**
-
-- **Endpoint**: `<Dán chính xác presignedUrl nhận từ Bước 1>`
-- **HTTP Method**: `PUT`
-- **Headers**:
-  - `Content-Type: <mimeType_cua_file>` (phải khớp với `mimeType` khai báo ở Bước 1, ví dụ `image/png`)
-- **Body**: Dữ liệu file binary thô (`File` object từ `<input type="file">` hoặc `Blob`).
-- **Response mong muốn**: `200 OK`
-
-#### Ví dụ Code JavaScript (Fetch API):
 ```javascript
-// Giả sử 'file' là đối tượng File lấy từ HTML Input
-// 'presignedUrl' và 'mimeType' lấy từ kết quả Bước 1
-
-const uploadResponse = await fetch(presignedUrl, {
+const response = await fetch(initialized.presignedUrl, {
   method: 'PUT',
-  headers: {
-    'Content-Type': file.type
-  },
-  body: file // Truyền trực tiếp File object
+  headers: { 'Content-Type': file.type },
+  body: file
 });
-
-if (uploadResponse.ok) {
-  console.log("Upload lên MinIO thành công!");
-}
+if (!response.ok) throw new Error('Upload storage chưa thành công');
 ```
 
----
+initialized là DTO API initialize đã trả, không phải initialized.data. Không thêm Authorization Identity vào request MinIO, không dùng FormData, không sửa URL đã ký. Cần CORS của storage phù hợp origin frontend khi trình duyệt gọi khác origin.
 
-### Bước 3: Xác nhận hoàn tất upload (Confirm Upload)
+## 3. Confirm và chờ xác minh
 
-Sau khi upload lên MinIO thành công ở Bước 2, Client gọi API Confirm để báo cho Media Service biết và kích hoạt tiến trình xác thực ngầm.
+PUT thành công mới POST /api/v1/media/uploads/{sessionId}/confirm với Bearer, không có body checksum. Nhận202 rồi chờ trạng thái do worker cập nhật. Không confirm lại như một polling endpoint. Kafka, internal MinIO endpoint và worker phải hoạt động để file đi tới READY. API hiện không có endpoint GET upload session riêng.
 
-- **Endpoint**: `POST /api/v1/media/uploads/{sessionId}/confirm`
-- **Headers**:
-  - `X-User-Id: <UUID-nguoi-dung-dang-nhap>`
-- **Response thành công (`202 Accepted`)**:
-  ```json
-  {
-    "sessionId": "0190ce1a-3000-7000-8000-000000000001",
-    "mediaId": "0190ce1a-3000-7000-8000-000000000002"
-  }
-  ```
+## 4. Dùng mediaId
 
----
+GET /api/v1/media/{mediaId} để lấy metadata và URL khi READY. Client xử lý URL null, lỗi và thời hạn theo contract; không dựa vào sleep1 giây cố định để kết luận file đã sẵn sàng. Lưu mediaId trong dữ liệu nghiệp vụ, lấy URL mới khi cần. GET trước READY hiện có thể500 theo nhánh IllegalStateException; xem [contract notes](contract_notes.md).
 
-## ⚙️ Cơ Chế Xác Thực Ngầm (Background Verification Worker)
-
-Sau khi Bước 3 được gọi, Media Service phát một sự kiện vào **Kafka Topic `media-upload-verification`**. Một **Worker Consumer (`UploadVerificationConsumer`)** sẽ lắng nghe ngầm và thực hiện các bước kiểm tra tự động:
-
-1. **Gọi MinIO `statObject()`**: Kiểm tra xem file có thực sự tồn tại tại `objectKey` trên MinIO hay không.
-2. **Kiểm tra dung lượng (`sizeBytes`)**: So sánh kích thước thực tế của file lưu trên MinIO với `sizeBytes` mà Client đã khai báo ở Bước 1.
-3. **Cập nhật Database**:
-   - **Xác thực hợp lệ**:
-     - `upload_sessions.status` ➔ `COMPLETED`
-     - `medias.status` ➔ `READY` (File bắt đầu phục vụ người dùng)
-   - **Xác thực thất bại** (Không thấy file hoặc sai dung lượng):
-     - `upload_sessions.status` ➔ `FAILED` (kèm `failure_reason` chi tiết)
-     - `medias.status` ➔ `FAILED`
-
----
-
-### Bước 4: Lấy URL xem/tải file (Get Media URL)
-
-Sau khi upload thành công, Client sử dụng `mediaId` nhận từ Bước 3 để gọi API lấy URL xem/tải ảnh từ MinIO.
-
-- **Endpoint**: `GET /api/v1/media/{mediaId}`
-- **Response thành công (`200 OK`)**:
-  ```json
-  {
-    "mediaId": "afc647b7-9045-471e-a2f0-f1a5ea983b05",
-    "originalFilename": "avatar.png",
-    "extension": "png",
-    "mimeType": "image/png",
-    "sizeBytes": 197133,
-    "mediaType": "IMAGE",
-    "visibility": "PRIVATE",
-    "status": "READY",
-    "url": "http://localhost:9000/media/uploads/2026/07/23/afc647b7-9045-471e-a2f0-f1a5ea983b05.png?X-Amz-...",
-    "createdAt": "2026-07-23T22:57:43Z"
-  }
-  ```
-
-Client lấy trực tiếp đường dẫn `url` trong response này để gắn vào thẻ `<img src="...">` hoặc mở link xem/tải file.
-
----
-
-## ⚡ Xử Lý Lỗi Thường Gặp (Troubleshooting)
-
-1. **Lỗi `403 Forbidden` ở Bước 2**:
-   - Do `presignedUrl` đã hết hạn (mặc định 15 phút). Hướng xử lý: Gọi lại Bước 1 để lấy presigned URL mới.
-   - Do `Content-Type` header gửi ở Bước 2 không khớp với `mimeType` đã khai báo ở Bước 1.
-
-2. **Lỗi `400 Bad Request` ở Bước 1 & Bước 4**:
-   - File vượt quá kích thước cho phép của Policy (`max_file_size`).
-   - Định dạng `mimeType` không nằm trong danh sách được phép (`allowed_mime_types`).
-   - Ở Bước 4: Trạng thái file chưa `READY` (đang xác thực hoặc bị lỗi).
-
+Ảnh biển báo và ảnh câu hỏi có importer/checkpoint tại repo Content Builder. Không upload lại toàn bộ dữ liệu trên môi trường đang phục vụ chỉ vì source đã được commit/push.

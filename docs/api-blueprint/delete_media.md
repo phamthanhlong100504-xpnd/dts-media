@@ -1,33 +1,21 @@
-# API Blueprint: Xóa Media (Delete Media)
+# API Blueprint: Soft-delete Media
 
 ## Endpoint
-`DELETE /api/v1/media/{media_id}`
 
-## Prerequisites
-- User đã xác thực (có Bearer Token hợp lệ).
-- Bản ghi `medias` tồn tại và thuộc sở hữu của user đang đăng nhập (hoặc user có quyền Admin).
+`DELETE /api/v1/media/{mediaId}`
 
-## Request Parameters
-- `media_id` (path, required) – UUID của đối tượng media cần xóa.
+## Request
 
-## Logic (server side)
-1. Xác thực user thông qua token.
-2. Tìm kiếm bản ghi `medias` trong cơ sở dữ liệu theo `media_id`.
-3. Nếu không tìm thấy hoặc `deleted_at` không NULL (đã bị xóa trước đó), trả về lỗi **404 Not Found**.
-4. Kiểm tra quyền hạn: Nếu `created_by` khác `user_id` hiện tại (và user không phải Admin), trả về lỗi **403 Forbidden**.
-5. Đánh dấu xóa mềm (Soft delete):
-   - Cập nhật trường `deleted_at` thành thời gian hiện tại (NOW).
-   - Cập nhật `deleted_by` bằng `user_id` hiện tại.
-6. Xử lý file vật lý (Asynchronous / Batch):
-   - Bắn một message (event) vào Message Broker (VD: RabbitMQ/Kafka) chứa thông tin `media_id` hoặc đường dẫn file để worker xử lý việc xóa file trên MinIO S3 sau, nhằm không làm chậm quá trình phản hồi API.
-   - *Lựa chọn thay thế*: Chạy một Cron Job định kỳ (hàng ngày) quét các bản ghi có `deleted_at` != NULL để gọi S3 SDK xóa file vật lý và sau đó xóa cứng (hard delete) hoặc giữ nguyên bản ghi trong Database tùy yêu cầu nghiệp vụ.
-7. Trả về HTTP Status 204 No Content.
+Path mediaId là UUID. Query userId tùy chọn; không có body. Khi có userId, service so với createdBy. Method hiện không lấy chủ sở hữu từ JWT principal.
 
-## Response (204 No Content)
-(Không có body trả về).
+## Logic / Response
+
+Tìm media chưa deletedAt. Ghi deletedAt và updatedBy rồi save; trả204 No Content. Không xóa binary khỏi bucket và không đổi status thành DELETED trong nhánh hiện tại. Các API list/detail loại hoặc từ chối hàng đã soft-delete. Không xóa media đang được Content Builder/Practice tham chiếu chỉ để dọn Git.
 
 ## Errors
-- **401 Unauthorized** – User chưa xác thực.
-- **403 Forbidden** – User không có quyền xóa (không phải người tạo ra file).
-- **404 Not Found** – `media_id` không tồn tại hoặc đã bị xóa.
-- **500 Internal Server Error** – Lỗi cập nhật cơ sở dữ liệu hoặc lỗi kết nối.
+
+Media không có/đã soft-delete: IllegalArgumentException →400. userId khác chủ: SecurityException, chưa có mapping403 riêng. Xóa lặp không phải một giao kèo idempotency trả204 của source này.
+
+## Source
+
+[MediaController](../../src/main/java/com/dts/media/api/controller/MediaController.java), [MediaService](../../src/main/java/com/dts/media/application/service/MediaService.java), [contract notes](contract_notes.md).

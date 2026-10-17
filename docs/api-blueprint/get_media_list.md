@@ -1,68 +1,30 @@
-# API Blueprint: Lấy danh sách Media (Get Media List)
+# API Blueprint: List Media
 
 ## Endpoint
+
 `GET /api/v1/media`
 
-## Prerequisites
-- User đã xác thực (có Bearer Token hợp lệ).
-- Bảng `medias` có dữ liệu của user tương ứng.
+## Request Parameters
 
-## Request Parameters (Query)
-- `page` (optional, integer) – Số thứ tự trang, bắt đầu từ 0. Mặc định: `0`.
-- `size` (optional, integer) – Số lượng record trên mỗi trang. Mặc định: `10`.
-- `mediaType` (optional, string) – Lọc theo loại file. Các giá trị hợp lệ: `IMAGE`, `VIDEO`, `AUDIO`, `DOCUMENT`.
-- `status` (optional, string) – Lọc theo trạng thái xử lý. Các giá trị hợp lệ: `UPLOADING`, `READY`, `FAILED`.
-- `visibility` (optional, string) – Lọc theo quyền truy cập. Các giá trị hợp lệ: `PRIVATE`, `PUBLIC`.
+| Query | Kiểu | Mặc định / nghiệp vụ |
+| --- | --- | --- |
+| userId | UUID, tùy chọn | Lọc createdBy nếu có; bỏ qua thì không giới hạn theo người |
+| mediaType | string, tùy chọn | Lọc mediaType |
+| status | MediaStatus, tùy chọn | UPLOADING, READY, FAILED, DELETED |
+| visibility | string, tùy chọn | PUBLIC/PRIVATE |
+| page | int | 0, trang bắt đầu từ0 |
+| size | int | 10; controller hiện không đặt max100 |
 
-## Logic (server side)
-1. Lấy thông tin `user_id` từ token xác thực.
-2. Xây dựng câu truy vấn database để lấy danh sách `medias` thỏa mãn:
-   - `created_by` = `user_id`.
-   - `deleted_at` IS NULL (chỉ lấy các bản ghi chưa bị xóa).
-   - Áp dụng các bộ lọc `mediaType`, `status`, `visibility` nếu client truyền lên.
-3. Áp dụng phân trang (Pagination) với `offset = page * size` và `limit = size`. Order by `created_at` DESC (mới nhất lên đầu).
-4. Sinh URL tải/xem trước (Presigned GET URL) cho các bản ghi có trạng thái `READY` nếu cấu hình file lưu trực tiếp (giống logic Get Media URL).
-5. Trả về dữ liệu danh sách cùng metadata phân trang.
+Controller chỉ tạo PageRequest.of(page,size); không có query sort được chuyển tiếp và không cam kết thứ tự ổn định ngoài cấu hình hiện có. Query userId không phải một cơ chế xác minh chủ sở hữu từ JWT.
 
-## Response (JSON, 200 OK)
-```json
-{
-  "content": [
-    {
-      "mediaId": "afc647b7-9045-471e-a2f0-f1a5ea983b05",
-      "originalFilename": "avatar.png",
-      "extension": "png",
-      "mimeType": "image/png",
-      "sizeBytes": 197133,
-      "mediaType": "IMAGE",
-      "visibility": "PRIVATE",
-      "status": "READY",
-      "url": "http://localhost:9000/media/uploads/2026/07/23/afc647b7-9045-471e-a2f0-f1a5ea983b05.png?X-Amz-...",
-      "createdAt": "2026-07-23T22:57:43Z"
-    },
-    {
-      "mediaId": "b1b2b3b4-5678-471e-a2f0-f1a5ea983b06",
-      "originalFilename": "video_intro.mp4",
-      "extension": "mp4",
-      "mimeType": "video/mp4",
-      "sizeBytes": 15000000,
-      "mediaType": "VIDEO",
-      "visibility": "PUBLIC",
-      "status": "UPLOADING",
-      "url": null,
-      "createdAt": "2026-07-24T10:00:00Z"
-    }
-  ],
-  "pageable": {
-    "pageNumber": 0,
-    "pageSize": 10,
-    "totalElements": 2,
-    "totalPages": 1
-  }
-}
-```
+## Logic
 
-## Errors
-- **401 Unauthorized** – User chưa xác thực hoặc token hết hạn.
-- **400 Bad Request** – Tham số truyền vào sai định dạng (ví dụ page, size không hợp lệ).
-- **500 Internal Server Error** – Lỗi truy vấn cơ sở dữ liệu hoặc lỗi kết nối.
+Repository lọc các trường được truyền và chỉ trả deletedAt=null. READY có thể được gắn URL GET; trạng thái khác trả url=null. Lỗi lấy storage/sinh URL trong list được catch nên item READY cũng có thể có url=null.
+
+## Response — 200 OK
+
+Body là Spring Data Page<MediaResponse> trực tiếp, chứa content, number, size, totalElements, totalPages và metadata phân trang của Spring. Mỗi phần tử content theo [MediaResponse](get_media_url.md). Không bọc data/success hoặc đổi number thành page ở backend contract.
+
+## Errors / Source
+
+Page âm/size không dương gây IllegalArgumentException →400. Lỗi enum/UUID/query binding do Spring xử lý. Xem [MediaController](../../src/main/java/com/dts/media/api/controller/MediaController.java), [MediaRepository](../../src/main/java/com/dts/media/domain/repository/MediaRepository.java), [contract notes](contract_notes.md).

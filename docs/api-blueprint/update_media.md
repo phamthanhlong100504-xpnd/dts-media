@@ -1,56 +1,30 @@
-# API Blueprint: Cập nhật thông tin Media (Update Media)
+# API Blueprint: Update Media Metadata
 
 ## Endpoint
-`PATCH /api/v1/media/{media_id}`
 
-## Prerequisites
-- User đã xác thực (có Bearer Token hợp lệ).
-- Bản ghi `medias` tồn tại và thuộc sở hữu của user đang đăng nhập (hoặc user có quyền Admin).
+`PATCH /api/v1/media/{mediaId}`
 
-## Request Parameters
-- `media_id` (path, required) – UUID của đối tượng media cần cập nhật.
+## Request
 
-## Request Body (JSON)
-Chỉ truyền lên các trường cần thay đổi (Partial Update).
+Path mediaId là UUID. Query userId tùy chọn; nếu được truyền service so sánh với createdBy. Controller không lấy userId từ principal.
+
 ```json
 {
-  "visibility": "PUBLIC",
-  "originalFilename": "new_avatar.png"
+  "originalFilename": "bien-bao-moi.webp",
+  "visibility": "PUBLIC"
 }
 ```
 
-- `visibility` (optional, string) – Cập nhật quyền truy cập, giá trị `PUBLIC` hoặc `PRIVATE`.
-- `originalFilename` (optional, string) – Cập nhật tên hiển thị của file (không làm thay đổi file vật lý trên Storage).
+Trường null được giữ nguyên. Đây là đổi metadata, không upload lại binary/objectKey hoặc đổi nội dung file.
 
-## Logic (server side)
-1. Xác thực user thông qua token.
-2. Tìm kiếm bản ghi `medias` trong cơ sở dữ liệu theo `media_id`.
-3. Nếu không tìm thấy hoặc `deleted_at` không NULL, trả về lỗi **404 Not Found**.
-4. Kiểm tra quyền hạn: Nếu `created_by` khác `user_id` hiện tại (và user không phải Admin), trả về lỗi **403 Forbidden**.
-5. Cập nhật các trường được truyền lên từ request body vào bản ghi.
-6. Lưu thay đổi vào cơ sở dữ liệu.
-7. Trả về thông tin media sau khi cập nhật.
+## Logic / Response — 200 OK
 
-## Response (JSON, 200 OK)
-```json
-{
-  "mediaId": "afc647b7-9045-471e-a2f0-f1a5ea983b05",
-  "originalFilename": "new_avatar.png",
-  "extension": "png",
-  "mimeType": "image/png",
-  "sizeBytes": 197133,
-  "mediaType": "IMAGE",
-  "visibility": "PUBLIC",
-  "status": "READY",
-  "url": "http://localhost:9000/media/uploads/2026/07/23/afc647b7-9045-471e-a2f0-f1a5ea983b05.png?X-Amz-...",
-  "createdAt": "2026-07-23T22:57:43Z",
-  "updatedAt": "2026-07-29T08:00:00Z"
-}
-```
+Yêu cầu media tồn tại và chưa soft-delete. Nếu userId có và khác chủ, ném SecurityException. Cập nhật các trường được gửi và updatedAt, trả MediaResponse trực tiếp với url=null; muốn URL thì gọi GET detail khi READY.
 
 ## Errors
-- **401 Unauthorized** – User chưa xác thực.
-- **403 Forbidden** – User không có quyền chỉnh sửa (không phải người tạo ra file).
-- **404 Not Found** – `media_id` không tồn tại hoặc đã bị xóa.
-- **400 Bad Request** – Tham số trong body không hợp lệ (ví dụ visibility không đúng enum).
-- **500 Internal Server Error** – Lỗi cập nhật cơ sở dữ liệu.
+
+Không có/đã xóa: IllegalArgumentException →400. SecurityException và lỗi DB không có mapping riêng trong advice hiện tại; không tự quy chúng về403. Giá trị visibility còn chịu CHECK của database.
+
+## Source
+
+[MediaController](../../src/main/java/com/dts/media/api/controller/MediaController.java), [MediaService](../../src/main/java/com/dts/media/application/service/MediaService.java), [UpdateMediaRequest](../../src/main/java/com/dts/media/api/request/UpdateMediaRequest.java). Xem [contract notes](contract_notes.md).

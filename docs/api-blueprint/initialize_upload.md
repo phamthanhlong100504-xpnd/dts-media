@@ -1,58 +1,62 @@
-# API Blueprint: Initialize Upload (Phase 1)
+# API Blueprint: Initialize Upload
 
 ## Endpoint
+
 `POST /api/v1/media/uploads/initialize`
 
 ## Prerequisites
-- Kafka configuration (`spring.kafka.bootstrap-servers`) defined in `application.properties`.
-- Database tables exist: `storages`, `medias`, `upload_sessions`, `upload_policies`.
-- At least one `storages` record with `is_default = true`.
-- Relevant `upload_policies` for the requested `target_type`.
 
-## Request Body (JSON)
+- PostgreSQL có storages, medias, upload_sessions, upload_policies và policy của targetType.
+- Có storage mặc định; bucket của storage tồn tại trong MinIO.
+- MinIO endpoint bên ngoài trả trong URL phải truy cập được từ client.
+- Header `Authorization: Bearer <access-token>` và `Content-Type: application/json`.
+
+## Request Body
+
 ```json
 {
-  "file_name": "string",          // Tên file gốc do client cung cấp
-  "size_bytes": 12345,            // Kích thước dự kiến (byte)
-  "mime_type": "image/jpeg",    // MIME type của file
-  "visibility": "PRIVATE",      // PUBLIC hoặc PRIVATE
-  "target_type": "USER"          // Loại đối tượng để áp dụng policy (USER, ROLE, ...)
+  "fileName": "traffic-sign.webp",
+  "sizeBytes": 12345,
+  "mimeType": "image/webp",
+  "visibility": "PUBLIC",
+  "targetType": "TRAFFIC_SIGN"
 }
 ```
 
-## Logic (server side)
-1. Validate request against `upload_policies` (max size, MIME whitelist/blacklist).
-2. Retrieve default storage (`storages.is_default = true`).
-3. Create a new record in `medias` with:
-   - `status = 'UPLOADING'`
-   - `object_key = 'uploads/yyyy/mm/dd/<uuid>.<ext>'`
-   - `storage_id` = id of the default storage
-   - `size_bytes` = value from request (placeholder, will be updated after verification)
-   - other metadata as needed.
-4. Create a new record in `upload_sessions` with:
-   - `media_id` referencing the `medias` record
-   - `status = 'PENDING'`
-   - `uploader_id` = authenticated user/service id
-   - `created_by` = same as `uploader_id`
-5. Generate a presigned PUT URL using MinIO/S3 SDK for the `object_key`.
+Các trường dùng camelCase theo InitializeUploadForm. fileName/mimeType/visibility/targetType là chuỗi bắt buộc không trắng; sizeBytes bắt buộc và dương. visibility là PUBLIC/PRIVATE theo constraint DB; targetType dùng đúng chuỗi mà repository tra policy. Không gửi snake_case, mediaId hoặc sessionId để tự chọn ID.
 
-## Response (JSON, 201 Created)
+## Logic
+
+1. UploadController lấy sub từ Bearer token; initialize chuyển sub thành UUID.
+2. Service tìm policy theo targetType, kiểm tra maxFileSize và allowedMimeTypes.
+3. Lấy storage có is_default=true và bucket tương ứng.
+4. Sinh mediaId, objectKey uploads/yyyy/MM/dd/<mediaId>.<extension>; ghi media UPLOADING. visibility được lấy từ request.
+5. Sinh sessionId, ghi upload session PENDING.
+6. Sinh presigned PUT URL bằng minio.endpoint, hạn mặc định15 phút; trả response sau transaction.
+
+Trong source hiện tại, blockedMimeTypes, enabled, deletedAt và visibility của policy không được kiểm tra/ép lại đầy đủ tại initialize. Vì vậy không mô tả những kiểm tra này như một bảo đảm API. Chi tiết ranh giới xác thực ở [contract_notes.md](contract_notes.md).
+
+## Response — 201 Created
+
 ```json
 {
-  "session_id": "<uuid>",
-  "media_id": "<uuid>",
-  "presigned_url": "https://minio.example.com/bucket/uploads/...",
-  "object_key": "uploads/2024/10/abc123def456.jpg",
-  "expired_at": "2026-07-20T12:00:00Z"
+  "sessionId": "11111111-1111-4111-8111-111111111111",
+  "mediaId": "22222222-2222-4222-8222-222222222222",
+  "presignedUrl": "http://localhost:9000/media/uploads/example.webp?<signed-query>",
+  "objectKey": "uploads/2026/10/17/22222222-2222-4222-8222-222222222222.webp",
+  "expiredAt": "2026-10-17T17:15:00Z"
 }
 ```
 
----
+Ví dụ minh họa shape, các ID/URL/thời điểm không phải dữ liệu thật hoặc một bộ URL/objectKey có thể dùng để upload. Dùng nguyên giá trị API trả về, không tự sửa hostname, path hoặc query sau khi ký. Không có wrapper data.
 
 ## Errors
-- **400 Bad Request** – invalid payload or policy violation.
-- **500 Internal Server Error** – failure generating presigned URL.
 
----
+- IllegalArgumentException như thiếu policy/storage, uploader UUID sai, vượt size hoặc MIME ngoài allow-list:400 theo GlobalExceptionHandler.
+- Bearer không giải mã được hoặc thiếu sub trong parser:401; thiếu header ở binding có thể400.
+- Lỗi sinh URL: RuntimeException,500 theo xử lý mặc định.
+- Validation body do Spring xử lý; không giả định body lỗi giống ApiResponse của repo khác.
 
-*Generated according to `api-blueprint-generator.md` and the implementation plan.*
+## Source
+
+[UploadController](../../src/main/java/com/dts/media/api/controller/UploadController.java), [InitializeUploadForm](../../src/main/java/com/dts/media/api/form/InitializeUploadForm.java), [UploadService](../../src/main/java/com/dts/media/application/service/UploadService.java).
