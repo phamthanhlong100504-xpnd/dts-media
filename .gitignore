@@ -38,3 +38,20 @@ out/
 
 .antigravity-ide/extensions/**
 
+# Local configuration, reports and transient files.
+.env
+.env.*
+!.env.example
+*.log
+/logs/
+/tmp/
+/handoff/
+__pycache__/
+*.py[cod]
+
+# Local upload/object-storage data, never application source.
+/uploads/
+/minio_data/
+/minio-data/
+/data/minio/
+/data/uploads/

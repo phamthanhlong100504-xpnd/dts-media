@@ -1,3 +1,6 @@
 /gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary
+
+# Preserve the reviewed new migration without renormalizing existing SQL.
+src/main/resources/db/migration/V5__add_traffic_sign_policy.sql -text
