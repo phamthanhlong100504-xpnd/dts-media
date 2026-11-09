@@ -8,18 +8,18 @@
 
 | Query | Kiểu | Mặc định / nghiệp vụ |
 | --- | --- | --- |
-| userId | UUID, tùy chọn | Lọc createdBy nếu có; bỏ qua thì không giới hạn theo người |
+| userId | UUID, tùy chọn | Người thường chỉ sub của mình; ROLE_ADMIN + media:manage có thể lọc owner khác hoặc toàn kho |
 | mediaType | string, tùy chọn | Lọc mediaType |
 | status | MediaStatus, tùy chọn | UPLOADING, READY, FAILED, DELETED |
 | visibility | string, tùy chọn | PUBLIC/PRIVATE |
 | page | int | 0, trang bắt đầu từ0 |
-| size | int | 10; controller hiện không đặt max100 |
+| size | int | 10; phạm vi 1–100 |
 
-Controller chỉ tạo PageRequest.of(page,size); không có query sort được chuyển tiếp và không cam kết thứ tự ổn định ngoài cấu hình hiện có. Query userId không phải một cơ chế xác minh chủ sở hữu từ JWT.
+Yêu cầu JWT và media:read. Controller sắp xếp createdAt/id giảm dần; không nhận sort tùy ý. Khi không phải ADMIN manager, bỏ userId vẫn chỉ đọc createdBy=sub; hint khác sub bị403.
 
 ## Logic
 
-Repository lọc các trường được truyền và chỉ trả deletedAt=null. READY có thể được gắn URL GET; trạng thái khác trả url=null. Lỗi lấy storage/sinh URL trong list được catch nên item READY cũng có thể có url=null.
+Repository lọc trong scope quyền và chỉ trả deletedAt=null. PUBLIC + READY sinh URL GET; PRIVATE và trạng thái khác trả url=null trong list để tránh phát URL hàng loạt. Lỗi ký URL trả503 thay vì che lỗi bằng url=null. DTO/Page giữ nguyên cho thư viện Media admin.
 
 ## Response — 200 OK
 

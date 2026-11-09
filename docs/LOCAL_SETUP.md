@@ -56,7 +56,7 @@ $env:MINIO_ENDPOINT = 'http://localhost:9000'
 $env:MINIO_INTERNAL_ENDPOINT = 'http://localhost:9000'
 $env:MEDIA_GET_URL_EXPIRY_MINUTES = '60'
 $env:MEDIA_PUT_URL_EXPIRY_MINUTES = '15'
-$env:SPRING_JPA_HIBERNATE_DDL_AUTO = 'none'
+$env:SPRING_JPA_HIBERNATE_DDL_AUTO = 'validate'
 $env:SPRING_FLYWAY_ENABLED = 'false'
 $env:SPRING_FLYWAY_VALIDATE_ON_MIGRATE = 'true'
 
@@ -69,9 +69,10 @@ function Read-DtsSecret([string]$Name) {
 $env:SPRING_DATASOURCE_PASSWORD = Read-DtsSecret 'PostgreSQL password'
 $env:MINIO_ACCESS_KEY = Read-DtsSecret 'MinIO access key'
 $env:MINIO_SECRET_KEY = Read-DtsSecret 'MinIO secret key'
+$env:JWT_ACCESS_SECRET = Read-DtsSecret 'Identity access JWT secret cua dung moi truong'
 ```
 
-Giá trị khóa lấy từ hạ tầng của môi trường đích, không lấy từ tài liệu hay commit giá trị thật vào .env.example. Khi Media ở Docker và client ở máy khác: MINIO_ENDPOINT dùng hostname client truy cập được; MINIO_INTERNAL_ENDPOINT dùng địa chỉ worker truy cập được. URL đã ký không đổi host/query sau khi tạo. Cần CORS MinIO phù hợp origin frontend.
+Giá trị khóa lấy từ cấu hình môi trường đích, không commit hoặc gửi lên chat. Media yêu cầu JWT_ACCESS_SECRET đúng khóa access của Identity; mặc định issuer dts-identity-service, nếu môi trường đổi thì đặt JWT_ISSUER tương ứng. Thiếu khóa sẽ dừng khởi động. Endpoint ngoài phải truy cập được từ client, endpoint nội bộ dùng cho worker. Cần CORS/Range MinIO phù hợp frontend; không đổi URL sau ký.
 
 ## 4. Migration và khởi động
 
@@ -82,7 +83,7 @@ $env:SPRING_FLYWAY_ENABLED = 'true'
 .\gradlew.bat bootRun
 ```
 
-Flyway chạy V1 schema, V2 storage/user policy, V3 QUESTION, V4 EXAM, V5 TRAFFIC_SIGN. Hibernate đã được override none ở mục3. Với Linux/macOS dùng `sh ./gradlew bootRun` và export biến tương đương. Wrapper tải Gradle/dependency lần đầu nếu chưa có cache.
+Flyway chạy đủ V1–V7: V5 TRAFFIC_SIGN, V6 policy video/thumbnail PRIVATE, V7 thêm upload_target_type nullable và storage private-minio/bucket media-private cho upload PRIVATE mới. Hibernate dùng validate để schema chỉ đổi qua migration. Với Linux/macOS dùng `sh ./gradlew bootRun`; wrapper tải Gradle/dependency nếu chưa cache.
 
 DB hiện hữu: backup và kiểm tra Flyway history/schema trước khi nâng cấp, chứng minh trên clone nếu cần. Không đánh dấu V5 đã chạy bằng cách sửa history, không chạy lại V1…V4 và không repair checksum để bỏ lỗi. V5 có INSERT ID cố định; chỉ thực thi đúng một lần qua migration version, không chạy tay lặp. Bản snapshot source không cho biết DB local đã chạy V5 hay chưa.
 
@@ -110,8 +111,15 @@ Không chép UUID/URL đã ký hoặc checkpoint của máy khác để giả đ
 
 Gateway host-local dùng MEDIA_SERVICE_URL=http://localhost:8080 trong chính environment khởi động Gateway. Frontend/API metadata đi qua route của dự án; PUT binary đi trực tiếp tới presignedUrl của MinIO. Không đưa Bearer Identity vào PUT MinIO.
 
-Client sử dụng DTO trực tiếp của Media, phân biệt sessionId/mediaId và 202/READY. Các điều kiện hiện tại về ownership, parser token và lỗi được mô tả đúng source ở [contract notes](api-blueprint/contract_notes.md). Không gán thêm bảo đảm của Practice cho Media.
+Client sử dụng DTO trực tiếp của Media, phân biệt sessionId/mediaId và 202/READY. Các điều kiện hiện tại về ownership, JWT và lỗi được mô tả đúng source ở [contract notes](api-blueprint/contract_notes.md). Không gán thêm bảo đảm của Practice cho Media.
 
 ## 7. Vận hành source
 
 Giữ wrapper, code/test, migration và tài liệu. .gradle/build/bin, log, .env và runtime object-storage không đưa vào commit. Không xóa bucket, database, build đang được dùng hoặc ảnh đang tham chiếu chỉ để dọn repo. Người phụ trách tự retest giao diện sau khi push trước khi chốt repo; công việc Git không tạo upload fixture hoặc restart service.
+
+
+## Card 01: private storage và quyền
+
+Sau candidate/apply/verify, chạy Flyway V7 bằng đúng database Media, Hibernate validate. V7 chỉ thêm cột và storage, không tự tạo bucket/copy video. Trên MinIO Console môi trường đang dùng, tạo media-private với anonymous none; không chạy lại init minio-mc để tạo bucket nếu muốn giữ nguyên policy cũ. Backend cần quyền đọc bucket policy; PRIVATE không xác minh được trả503. PUBLIC ảnh lý thuyết tiếp tục qua default storage và GET URL như trước.
+
+Source compose thêm private bucket cho môi trường mới; không dùng thao tác compose mới để reset bucket hoặc volume local. Trước nghiệm thu học video, gói Content Builder phải đối chiếu map video/thumbnail và private storage an toàn. Legacy PRIVATE đang nằm ở bucket public chưa đủ điều kiện phát URL; không đoán hoặc tự di chuyển object. Xem [contract mô phỏng](api-blueprint/simulation_media_access.md).

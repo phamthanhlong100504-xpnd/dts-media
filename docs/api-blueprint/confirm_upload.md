@@ -10,13 +10,13 @@ PUT file vào đúng presignedUrl đã thành công. sessionId lấy từ initia
 
 ## Logic
 
-1. Controller tách sub từ Bearer; service tìm session theo sessionId.
-2. Chỉ session PENDING đi tiếp; đổi thành UPLOADING trong transaction.
+1. JWT đã xác minh; cần media:upload. Service khóa hàng session và kiểm đúng uploader từ sub, cả khi gọi lặp.
+2. PENDING hợp lệ đổi UPLOADING trong transaction, kiểm media chưa xóa/đúng chủ và target chung mới cần quyền quản trị.
 3. Phát UploadVerificationEvent. Listener AFTER_COMMIT gửi UploadVerificationMessage vào Kafka, key=sessionId.
 4. Trả202; worker nhận sự kiện và gọi statObject bằng internalMinioClient, kiểm tra tồn tại/quyền truy cập và size so với sizeBytes khai báo.
 5. Thành công: session COMPLETED, media READY. Sai kích thước/lỗi storage: session FAILED và khi có media thì media FAILED theo nhánh xử lý.
 
-Đây không phải endpoint finish có idempotency như Practice: confirm lại sau khi hết PENDING bị từ chối. Không gọi confirm lặp liên tục để chờ READY. Service hiện không so uploaderId với chủ session và không dùng row lock đặc tả; tài liệu không bổ sung các bảo đảm chưa có trong source.
+Gọi lặp UPLOADING/COMPLETED bởi đúng chủ trả cùng receipt, không phát event mới; FAILED/CANCELLED/EXPIRED trả409. Chờ trạng thái bằng GET detail, không gọi confirm để polling. Worker chỉ xử lý đúng cặp session/media ở UPLOADING, bổ sung Content-Type cho media mô phỏng.
 
 ## Response — 202 Accepted
 
@@ -32,8 +32,8 @@ PUT file vào đúng presignedUrl đã thành công. sessionId lấy từ initia
 ## Errors
 
 - Không tìm thấy session: IllegalArgumentException →400.
-- Session khác PENDING: IllegalStateException; GlobalExceptionHandler hiện không ánh xạ exception này, thường thành500 theo Spring mặc định. Không mặc định409 hoặc400.
-- Bearer parser không đọc được sub:401; lỗi binding header/path do Spring xử lý.
+- Session terminal không được confirm:409; khác chủ/thiếu quyền:403.
+- Bearer thiếu/không hợp lệ:401; lỗi binding header/path do Spring xử lý.
 
 ## Source
 

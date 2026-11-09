@@ -6,7 +6,7 @@
 
 ## Request
 
-Path mediaId là UUID. Query userId tùy chọn; nếu được truyền service so sánh với createdBy. Controller không lấy userId từ principal.
+Path mediaId là UUID. JWT cần media:update và đúng chủ, hoặc ROLE_ADMIN + media:manage. Query userId tùy chọn chỉ được bằng sub; không dùng query để thay danh tính.
 
 ```json
 {
@@ -19,11 +19,11 @@ Trường null được giữ nguyên. Đây là đổi metadata, không upload 
 
 ## Logic / Response — 200 OK
 
-Yêu cầu media tồn tại và chưa soft-delete. Nếu userId có và khác chủ, ném SecurityException. Cập nhật các trường được gửi và updatedAt, trả MediaResponse trực tiếp với url=null; muốn URL thì gọi GET detail khi READY.
+Yêu cầu media tồn tại/chưa soft-delete và kiểm ownership dù không gửi userId. Cập nhật trường được gửi, updatedAt và updatedBy=sub. Tên file được kiểm tra; target mô phỏng giữ PRIVATE và đúng extension. Trả MediaResponse trực tiếp với url=null; upload_target_type không được sửa qua body.
 
 ## Errors
 
-Không có/đã xóa: IllegalArgumentException →400. SecurityException và lỗi DB không có mapping riêng trong advice hiện tại; không tự quy chúng về403. Giá trị visibility còn chịu CHECK của database.
+Không có/đã xóa hoặc body sai:400; thiếu JWT:401; thiếu quyền/sai chủ:403. Giá trị visibility kiểm tại API và CHECK database.
 
 ## Source
 

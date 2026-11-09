@@ -27,14 +27,14 @@ Các trường dùng camelCase theo InitializeUploadForm. fileName/mimeType/visi
 
 ## Logic
 
-1. UploadController lấy sub từ Bearer token; initialize chuyển sub thành UUID.
-2. Service tìm policy theo targetType, kiểm tra maxFileSize và allowedMimeTypes.
+1. Security filter xác minh chữ ký/hạn/issuer/sub JWT; cần media:upload. USER thuộc cá nhân, mọi target khác cần ROLE_ADMIN + media:manage.
+2. Service tìm policy chưa soft-delete, enabled; kiểm maxFileSize, MIME allow/block chính xác, visibility và định dạng mô phỏng.
 3. Lấy storage có is_default=true và bucket tương ứng.
-4. Sinh mediaId, objectKey uploads/yyyy/MM/dd/<mediaId>.<extension>; ghi media UPLOADING. visibility được lấy từ request.
+4. Sinh mediaId, objectKey uploads/yyyy/MM/dd/<mediaId>.<extension>; ghi media UPLOADING và upload_target_type. visibility phải khớp policy; mô phỏng luôn PRIVATE.
 5. Sinh sessionId, ghi upload session PENDING.
 6. Sinh presigned PUT URL bằng minio.endpoint, hạn mặc định15 phút; trả response sau transaction.
 
-Trong source hiện tại, blockedMimeTypes, enabled, deletedAt và visibility của policy không được kiểm tra/ép lại đầy đủ tại initialize. Vì vậy không mô tả những kiểm tra này như một bảo đảm API. Chi tiết ranh giới xác thực ở [contract_notes.md](contract_notes.md).
+Các kiểm tra policy và ownership được thực thi tại service, không chỉ frontend. Xem [ma trận quyền](simulation_media_access.md) và [contract notes](contract_notes.md).
 
 ## Response — 201 Created
 
@@ -53,7 +53,7 @@ Ví dụ minh họa shape, các ID/URL/thời điểm không phải dữ liệu 
 ## Errors
 
 - IllegalArgumentException như thiếu policy/storage, uploader UUID sai, vượt size hoặc MIME ngoài allow-list:400 theo GlobalExceptionHandler.
-- Bearer không giải mã được hoặc thiếu sub trong parser:401; thiếu header ở binding có thể400.
+- Bearer thiếu/sai chữ ký/hạn/issuer/sub:401; thiếu quyền hoặc chọn target quản trị bằng tài khoản học viên:403.
 - Lỗi sinh URL: RuntimeException,500 theo xử lý mặc định.
 - Validation body do Spring xử lý; không giả định body lỗi giống ApiResponse của repo khác.
 

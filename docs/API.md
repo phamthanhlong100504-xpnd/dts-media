@@ -1,5 +1,7 @@
 # DTS Media — hướng dẫn API
 
+> Card 01 cập nhật xác thực/ownership/policy và confirm idempotency. Xem [contract hiện hành](api-blueprint/simulation_media_access.md); các ví dụ lịch sử dưới đây không thay thế ma trận quyền mới.
+
 | Nội dung | Tài liệu |
 | --- | --- |
 | Danh sách endpoint và kiểu response | [API blueprints](api-blueprint/README.md) |

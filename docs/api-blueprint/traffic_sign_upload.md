@@ -32,7 +32,7 @@ Thực thi V5 bằng Flyway đúng môi trường trước khi dùng targetType 
 }
 ```
 
-sizeBytes phải là kích thước file thật. API không convert JPEG/PNG thành WebP; phần chuẩn bị dữ liệu cần cung cấp file WebP. Service hiện lấy visibility từ request nên client phải gửi PUBLIC như policy/mục đích của ảnh biển báo.
+sizeBytes phải là kích thước file thật. API không convert JPEG/PNG thành WebP; phần chuẩn bị dữ liệu cần cung cấp file WebP. Client phải gửi PUBLIC khớp policy; JWT cần media:upload, ROLE_ADMIN và media:manage cho target TRAFFIC_SIGN.
 
 2. Nhận201 với sessionId, mediaId, presignedUrl, objectKey, expiredAt. PUT nguyên binary vào đúng URL, không dùng multipart/form-data, không gửi token Identity sang MinIO.
 3. PUT thành công mới POST /api/v1/media/uploads/{sessionId}/confirm cùng Bearer. Response202 chỉ có sessionId/mediaId.
@@ -41,9 +41,9 @@ sizeBytes phải là kích thước file thật. API không convert JPEG/PNG th�
 
 ## Logic / Errors
 
-Chính sách MIME/size dùng UploadService hiện có. Trong nhóm chuẩn, ảnh PNG/JPEG gửi targetType TRAFFIC_SIGN bị từ chối do allow-list chỉ image/webp. Những ràng buộc policy chưa được service kiểm tra được nêu trong [contract notes](contract_notes.md); không bổ sung bảo đảm whitelist parser/ownership/quota ngoài code.
+Chính sách MIME/size dùng UploadService hiện có. Trong nhóm chuẩn, ảnh PNG/JPEG gửi targetType TRAFFIC_SIGN bị từ chối do allow-list chỉ image/webp. Bản Card 01 kiểm MIME JSON chính xác, enabled/soft-delete/visibility và ownership như [contract notes](contract_notes.md); không tuyên bố có kiểm codec/file magic/quota ngoài code.
 
-Thiếu policy, quá size, MIME sai, uploader UUID sai →400 qua IllegalArgumentException. Confirm lặp/không PENDING và GET trước READY hiện có thể500; không giả định409. Trạng thái READY phải được kiểm tra trước khi publisher ghi tham chiếu vào nội dung.
+Thiếu policy, quá size, MIME sai, uploader UUID sai →400 qua IllegalArgumentException. Thiếu JWT→401, thiếu quyền/sai chủ→403; confirm terminal→409, lặp UPLOADING/COMPLETED cùng chủ giữ receipt. Chủ/admin đọc metadata trước READY với url=null. Trạng thái READY phải được kiểm tra trước khi publisher ghi tham chiếu vào nội dung.
 
 ## Dữ liệu môi trường mới
 

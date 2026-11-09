@@ -1,0 +1,717 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "DTS Card05 Media exam RPC",
+    "version": "v1-20261102",
+    "description": "Source-authored Media contract; not live Swagger export or runtime acceptance. Frontend uses Practice session APIs. Ticket protocols are documented in simulation_exam_media.md."
+  },
+  "servers": [
+    {
+      "url": "http://localhost:8080/api/v1/media"
+    }
+  ],
+  "paths": {
+    "/simulation-exam/eligibility": {
+      "post": {
+        "operationId": "simulationExamMediaEligibility",
+        "summary": "Check1–16 attested candidates without issuing URLs; verify current private-object Range/SHA, preserve candidate order.",
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "x-required-permissions": [
+          "media:read",
+          "simulations:read",
+          "simulations:exam"
+        ],
+        "x-internal-practice-rpc": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Raw DTO, no ApiResponse envelope.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body; exactly ticket field is accepted.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access JWT missing or rejected by native Media filter.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing required rights or invalid/expired/mismatched ticket.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Playback video unavailable, out of scope, or changed ETag/asset.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; do not assume readiness or completed playback.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage, policy verification, network or URL signing unavailable.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/simulation-exam/playback": {
+      "post": {
+        "operationId": "simulationExamMediaPlayback",
+        "summary": "Resolve current allowed exam position from a Practice playback ticket; includes exact session/position/nonce/bank/manifest binding.",
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "x-required-permissions": [
+          "media:read",
+          "simulations:read",
+          "simulations:exam"
+        ],
+        "x-internal-practice-rpc": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Raw DTO, no ApiResponse envelope.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body; exactly ticket field is accepted.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access JWT missing or rejected by native Media filter.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing required rights or invalid/expired/mismatched ticket.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Playback video unavailable, out of scope, or changed ETag/asset.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; do not assume readiness or completed playback.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage, policy verification, network or URL signing unavailable.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/simulation-exam/review-playback": {
+      "post": {
+        "operationId": "simulationExamMediaReviewPlayback",
+        "summary": "Resolve read-only replay attested by Practice for an already COMPLETED exam; separate review signing domain.",
+        "security": [
+          {
+            "IdentityBearer": []
+          }
+        ],
+        "x-required-permissions": [
+          "media:read",
+          "simulations:read",
+          "simulations:exam"
+        ],
+        "x-internal-practice-rpc": true,
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TicketRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Raw DTO, no ApiResponse envelope.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PlaybackResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body; exactly ticket field is accepted.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Access JWT missing or rejected by native Media filter.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Missing required rights or invalid/expired/mismatched ticket.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Playback video unavailable, out of scope, or changed ETag/asset.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected server failure; do not assume readiness or completed playback.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Storage, policy verification, network or URL signing unavailable.",
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "description": "no-store"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "IdentityBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "TicketRequest": {
+        "type": "object",
+        "properties": {
+          "ticket": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 16384,
+            "description": "Practice-signed domain-specific ticket; never minted or persisted by frontend."
+          }
+        },
+        "required": [
+          "ticket"
+        ],
+        "additionalProperties": false
+      },
+      "AttestedAsset": {
+        "type": "object",
+        "properties": {
+          "mediaId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fileName": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600000
+          },
+          "videoTrackDurationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600000
+          }
+        },
+        "required": [
+          "mediaId",
+          "fileName",
+          "sha256",
+          "durationMs",
+          "videoTrackDurationMs"
+        ],
+        "additionalProperties": false
+      },
+      "EligibilityItem": {
+        "type": "object",
+        "properties": {
+          "mediaId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ready": {
+            "type": "boolean"
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600000
+          },
+          "videoTrackDurationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600000
+          },
+          "objectEtag": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_-]{1,128}$",
+            "nullable": true
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "READY",
+              "MISSING",
+              "NOT_READY",
+              "SCOPE_MISMATCH",
+              "ASSET_MISMATCH",
+              "OPAQUE_PATH_REQUIRED",
+              "OBJECT_MISMATCH",
+              "RANGE_UNAVAILABLE",
+              "VIDEO_FORMAT_INVALID",
+              "OBJECT_SHA_MISMATCH",
+              "OBJECT_MISSING",
+              "OBJECT_CHANGED"
+            ]
+          }
+        },
+        "required": [
+          "mediaId",
+          "ready",
+          "durationMs",
+          "videoTrackDurationMs",
+          "reason"
+        ],
+        "additionalProperties": false
+      },
+      "EligibilityResponse": {
+        "type": "object",
+        "properties": {
+          "bankVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
+          },
+          "manifestSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "$ref": "#/components/schemas/EligibilityItem"
+            }
+          }
+        },
+        "required": [
+          "bankVersion",
+          "manifestSha256",
+          "items"
+        ],
+        "additionalProperties": false
+      },
+      "PlaybackResponse": {
+        "type": "object",
+        "properties": {
+          "sessionId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "position": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10
+          },
+          "playbackEventId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "bankVersion": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,95}$"
+          },
+          "manifestSha256": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "mediaId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "expiredAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "mimeType": {
+            "type": "string",
+            "enum": [
+              "video/mp4"
+            ]
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3600000
+          },
+          "usage": {
+            "type": "string",
+            "enum": [
+              "CURRENT",
+              "REVIEW"
+            ]
+          }
+        },
+        "required": [
+          "sessionId",
+          "position",
+          "playbackEventId",
+          "bankVersion",
+          "manifestSha256",
+          "mediaId",
+          "url",
+          "expiredAt",
+          "mimeType",
+          "durationMs",
+          "usage"
+        ],
+        "additionalProperties": false
+      },
+      "MediaError": {
+        "type": "object",
+        "properties": {
+          "timestamp": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "status",
+          "error",
+          "message"
+        ],
+        "additionalProperties": false
+      }
+    }
+  }
+}

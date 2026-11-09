@@ -6,7 +6,7 @@
 
 ## Logic
 
-Service yêu cầu media tồn tại, chưa soft-delete và status READY. Lấy storageId/bucket và sinh presigned GET URL bằng minio.endpoint; hạn mặc định60 phút qua MEDIA_GET_URL_EXPIRY_MINUTES. Endpoint trả metadata trực tiếp. URL có thể null nếu SDK sinh URL lỗi vì nhánh đó được catch; HTTP200 không chứng minh object đã được tải thành công từ MinIO.
+Service yêu cầu media tồn tại, chưa soft-delete. PUBLIC + READY và không phải target mô phỏng giữ luồng public cho ảnh lý thuyết. Trường hợp khác cần media:read và đúng chủ, hoặc ROLE_ADMIN + media:manage. Chủ/admin đọc UPLOADING/FAILED với url=null để polling; READY sinh presigned GET URL qua storage active, hạn mặc định60 phút. Lỗi ký URL trả503, không trả thành công với URL null. HTTP200 metadata không chứng minh MinIO/Range đã nghiệm thu.
 
 ## Response — 200 OK
 
@@ -30,10 +30,11 @@ Các giá trị là minh họa. Client dùng url khi khác null và lấy URL m�
 ## Errors
 
 - Media không có hoặc deletedAt khác null: IllegalArgumentException →400 trong source hiện hành, không phải404.
-- Media chưa READY hoặc thiếu cấu hình Storage: IllegalStateException; hiện không có mapping riêng, thường500.
+- Media chưa READY: chủ/admin nhận metadata với url=null. Thiếu cấu hình Storage vẫn là lỗi server; storage inactive/lỗi ký URL:503.
+- PRIVATE thiếu JWT:401; sai chủ/thiếu quyền:403. Học viên lấy video thuộc snapshot qua [playback có scope](simulation_media_access.md), không qua UUID PRIVATE bất kỳ.
 - Path UUID sai và lỗi binding do Spring xử lý.
 
-MediaController không có principal/header auth trong method này; xem [contract_notes.md](contract_notes.md) về ranh giới Gateway.
+Danh tính do security filter xác minh; không tin X-User-* hoặc query userId. Xem [contract_notes.md](contract_notes.md).
 
 ## Source
 

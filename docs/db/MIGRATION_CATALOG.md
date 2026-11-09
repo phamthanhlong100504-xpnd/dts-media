@@ -9,10 +9,14 @@ Các file SQL là nguồn chuẩn để thành viên triển khai schema/policy.
 | V3 | [V3__add_question_policy.sql](../../src/main/resources/db/migration/V3__add_question_policy.sql) | Bổ sung QUESTION và EXAM vào CHECK, seed policy QUESTION | `3210d34757ccebad3030c8c3bc6e2c10f76c53b449b54632541435dc51f9b059` |
 | V4 | [V4__add_exam_policy.sql](../../src/main/resources/db/migration/V4__add_exam_policy.sql) | Seed policy EXAM | `d2618fe8bbd055b49a92fccefac821a2ad0f9a9ced666cea73dc1223a908facd` |
 | V5 | [V5__add_traffic_sign_policy.sql](../../src/main/resources/db/migration/V5__add_traffic_sign_policy.sql) | Bổ sung TRAFFIC_SIGN vào CHECK và seed policy WebP PUBLIC | `d72833fbb82d86dd5d5275935e14935ee720f9922ff293eeb7914924422c5040` |
+| V6 | [V6__add_simulation_media_policies.sql](../../src/main/resources/db/migration/V6__add_simulation_media_policies.sql) | Policy MP4 2 GiB/WebP 20 MiB, PRIVATE | `be5a22564d4d6151f11ba3cc8976dd26869d371165c3c7584b5871de6e7039e2` |
+| V7 | [V7__add_simulation_media_scope.sql](../../src/main/resources/db/migration/V7__add_simulation_media_scope.sql) | Thêm upload_target_type nullable/CHECK và storage private-minio, giữ media cũ | `9f53f2825a0738ecb36697dfbbc13c4c47df80cf84bb1896a54bcc3263d47777` |
+
+V6/V7 ghi SHA256 byte source Git (không phải checksum Flyway); các giá trị V1–V5 phía trên giữ mốc snapshot lịch sử. Bản Card 01 giữ V1–V6 nguyên byte. V7 phải được apply vào source trước khi chạy database; dùng Hibernate validate. Storage mới trỏ bucket media-private; SQL không provision bucket hoặc copy object. Source compose bổ sung private bucket cho setup mới; môi trường hiện có phải provision có chủ đích. Legacy target NULL không được suy diễn từ MIME/tên file để mở video PRIVATE.
 
 ## Chạy có chủ đích
 
-Flyway quản lý thứ tự và lịch sử. Khởi động với SPRING_FLYWAY_ENABLED=true thực thi file còn thiếu; đặt Hibernate DDL none để schema chỉ thay đổi bằng migration. Hướng dẫn triển khai ở [LOCAL_SETUP.md](../LOCAL_SETUP.md). Chuẩn bị Git không chạy lệnh này.
+Flyway quản lý thứ tự và lịch sử. Khởi động với SPRING_FLYWAY_ENABLED=true thực thi file còn thiếu; đặt Hibernate DDL validate để schema chỉ thay đổi bằng migration. Hướng dẫn triển khai ở [LOCAL_SETUP.md](../LOCAL_SETUP.md). Chuẩn bị Git không chạy lệnh này.
 
 Snapshot chỉ thu source/Git, không đọc DB nên không chứng minh V5 đã được áp dụng ở local. Không sửa V1…V5 đã chạy, không đánh dấu success thủ công, không chạy lại INSERT policy có ID cố định. Nếu có thay đổi schema/policy tiếp theo, tạo version mới đúng quy trình.
 

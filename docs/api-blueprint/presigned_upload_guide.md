@@ -1,5 +1,7 @@
 # Client guide — upload file qua presigned URL
 
+> Card 01 cập nhật xác thực/ownership/policy và confirm idempotency. Xem [contract hiện hành](simulation_media_access.md); các ví dụ lịch sử dưới đây không thay thế ma trận quyền mới.
+
 ## Luồng
 
 ```mermaid

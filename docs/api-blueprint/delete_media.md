@@ -6,7 +6,7 @@
 
 ## Request
 
-Path mediaId là UUID. Query userId tùy chọn; không có body. Khi có userId, service so với createdBy. Method hiện không lấy chủ sở hữu từ JWT principal.
+Path mediaId là UUID, không có body. JWT cần media:delete và đúng chủ, hoặc ROLE_ADMIN + media:manage. Query userId tùy chọn chỉ là hint bằng sub; bỏ query không bỏ ownership.
 
 ## Logic / Response
 
@@ -14,7 +14,7 @@ Tìm media chưa deletedAt. Ghi deletedAt và updatedBy rồi save; trả204 No 
 
 ## Errors
 
-Media không có/đã soft-delete: IllegalArgumentException →400. userId khác chủ: SecurityException, chưa có mapping403 riêng. Xóa lặp không phải một giao kèo idempotency trả204 của source này.
+Media không có/đã soft-delete:400. Thiếu JWT:401; thiếu quyền/sai chủ/hint khác sub:403. Xóa lặp không cam kết204. Presigned URL đã cấp có thể còn dùng tới khi hết hạn.
 
 ## Source
 
