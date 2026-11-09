@@ -49,7 +49,9 @@ services:
       /bin/sh -c "
       until (/usr/bin/mc alias set myminio http://minio:9000 minioadmin minioadmin) do echo 'Waiting for MinIO...' && sleep 1; done;
       /usr/bin/mc mb myminio/media || true;
-      /usr/bin/mc anonymous set public myminio/media || true;
+      /usr/bin/mc anonymous set download myminio/media || true;
+      /usr/bin/mc mb myminio/media-private || true;
+      /usr/bin/mc anonymous set none myminio/media-private || true;
       exit 0;
       "
 

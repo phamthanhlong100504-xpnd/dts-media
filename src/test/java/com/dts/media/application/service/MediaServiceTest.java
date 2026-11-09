@@ -10,6 +10,10 @@ import com.dts.media.domain.repository.StorageRepository;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import com.dts.media.security.MediaTestActors;
+import org.springframework.security.core.context.SecurityContextHolder;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,6 +36,8 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class MediaServiceTest {
+
+    @Mock private MediaStorageGuard storageGuard;
 
     @Mock
     private MediaRepository mediaRepository;
@@ -57,6 +63,7 @@ class MediaServiceTest {
 
         mediaId = UUID.randomUUID();
         userId = UUID.randomUUID();
+        MediaTestActors.set(userId, Set.of("ROLE_STUDENT"), "media:read", "media:update", "media:delete");
         storageId = UUID.randomUUID();
 
         media = Media.builder()
@@ -78,6 +85,7 @@ class MediaServiceTest {
                 .id(storageId)
                 .bucket("dts-bucket")
                 .endpoint("http://localhost:9000")
+                .status("ACTIVE")
                 .build();
     }
 
@@ -105,13 +113,15 @@ class MediaServiceTest {
     }
 
     @Test
-    @DisplayName("getMediaDetail - Path 3: Status Not READY")
+    @DisplayName("getMediaDetail - Owner can poll UPLOADING metadata without a URL")
     void getMediaDetail_NotReady() {
         media.setStatus(MediaStatus.UPLOADING);
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
 
-        IllegalStateException ex = assertThrows(IllegalStateException.class, () -> mediaService.getMediaDetail(mediaId));
-        assertTrue(ex.getMessage().contains("Media is not ready for access"));
+        MediaResponse result = mediaService.getMediaDetail(mediaId);
+        assertEquals("UPLOADING", result.getStatus());
+        assertNull(result.getUrl());
+        verifyNoInteractions(storageRepository, minioClient);
     }
 
     @Test
@@ -187,7 +197,6 @@ class MediaServiceTest {
     @Test
     @DisplayName("updateMedia - Path 3: Security Exception")
     void updateMedia_SecurityException() {
-        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         UUID wrongUserId = UUID.randomUUID();
 
         assertThrows(SecurityException.class, () -> mediaService.updateMedia(mediaId, wrongUserId, new UpdateMediaRequest()));
@@ -236,7 +245,6 @@ class MediaServiceTest {
     @Test
     @DisplayName("deleteMedia - Path 3: Security Exception")
     void deleteMedia_SecurityException() {
-        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         UUID wrongUserId = UUID.randomUUID();
 
         assertThrows(SecurityException.class, () -> mediaService.deleteMedia(mediaId, wrongUserId));
@@ -253,4 +261,5 @@ class MediaServiceTest {
         assertEquals(userId, media.getUpdatedBy());
         verify(mediaRepository).save(media);
     }
+    @AfterEach void clearActor() { SecurityContextHolder.clearContext(); }
 }

@@ -48,6 +48,9 @@ public class Media {
     @Column(name = "visibility", nullable = false)
     private String visibility;
 
+    @Column(name = "upload_target_type", length = 30)
+    private String uploadTargetType;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false)
     private MediaStatus status;

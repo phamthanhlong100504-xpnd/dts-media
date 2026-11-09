@@ -15,6 +15,10 @@ import com.dts.media.domain.repository.MediaRepository;
 import com.dts.media.domain.repository.StorageRepository;
 import com.dts.media.domain.repository.UploadPolicyRepository;
 import com.dts.media.domain.repository.UploadSessionRepository;
+import com.dts.media.security.MediaAccess;
+import com.dts.media.security.MediaJwtVerifier;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 import com.dts.media.infrastructure.configuration.KafkaConfiguration;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
@@ -50,6 +54,7 @@ public class UploadService {
     private final MinioClient internalMinioClient;
     private final KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate;
     private final ApplicationEventPublisher applicationEventPublisher;
+    private final MediaStorageGuard storageGuard;
 
     @Value("${media.url.put-expiry-minutes:15}")
     private int putUrlExpiryMinutes;
@@ -64,7 +69,8 @@ public class UploadService {
                          MinioClient minioClient,
                          @Qualifier("internalMinioClient") MinioClient internalMinioClient,
                          KafkaTemplate<String, UploadVerificationMessage> kafkaTemplate,
-                         ApplicationEventPublisher applicationEventPublisher) {
+                         ApplicationEventPublisher applicationEventPublisher,
+                         MediaStorageGuard storageGuard) {
         this.uploadPolicyRepository = uploadPolicyRepository;
         this.uploadSessionRepository = uploadSessionRepository;
         this.mediaRepository = mediaRepository;
@@ -73,46 +79,59 @@ public class UploadService {
         this.internalMinioClient = internalMinioClient;
         this.kafkaTemplate = kafkaTemplate;
         this.applicationEventPublisher = applicationEventPublisher;
+        this.storageGuard = storageGuard;
     }
 
 
 
     @Transactional
     public InitializeUploadResponse initializeUpload(InitializeUploadForm form, String uploaderId) {
-        UploadPolicy policy = uploadPolicyRepository.findByTargetType(form.getTargetType())
+        var actor = MediaAccess.require("media:upload");
+        if (!"USER".equals(form.getTargetType()) && !actor.manager()) throw new SecurityException("Administrative upload target required");
+        UploadPolicy policy = uploadPolicyRepository.findByTargetTypeAndDeletedAtIsNull(form.getTargetType())
                 .orElseThrow(() -> new IllegalArgumentException("Upload policy not found for target type"));
 
         UUID uploaderUuid;
         try {
-            uploaderUuid = UUID.fromString(uploaderId);
+            uploaderUuid = MediaJwtVerifier.canonicalUuid(uploaderId);
         } catch (IllegalArgumentException e) {
             throw new IllegalArgumentException("Invalid uploader UUID format");
+        }
+
+        MediaAccess.actorHint(uploaderUuid, actor);
+        if (!policy.isEnabled() || policy.getDeletedAt() != null) throw new IllegalArgumentException("Upload policy disabled");
+        UploadChecks.filename(form.getFileName());
+        if (form.getSizeBytes() == null || form.getSizeBytes() <= 0 || form.getMimeType() == null || form.getMimeType().isBlank())
+            throw new IllegalArgumentException("Invalid upload size or MIME type");
+        if (!java.util.Objects.equals(form.getVisibility(), policy.getVisibility())) throw new IllegalArgumentException("Visibility must match upload policy");
+        if (MediaAccess.simulation(form.getTargetType())) {
+            if (!"PRIVATE".equals(form.getVisibility())) throw new IllegalArgumentException("Simulation uploads must be PRIVATE");
+            UploadChecks.simulationFormat(form.getTargetType(), form.getFileName(), form.getMimeType());
         }
 
         if (policy.getMaxFileSize() != null && form.getSizeBytes() > policy.getMaxFileSize()) {
             throw new IllegalArgumentException("File size exceeds policy limit");
         }
 
-        if (policy.getAllowedMimeTypes() != null && !policy.getAllowedMimeTypes().isEmpty() && !policy.getAllowedMimeTypes().equals("[]")) {
-            if (!policy.getAllowedMimeTypes().contains(form.getMimeType())) {
-                throw new IllegalArgumentException("MIME type not allowed by policy");
-            }
-        }
+        if ((!UploadChecks.emptyMimeList(policy.getAllowedMimeTypes()) && !UploadChecks.containsMime(policy.getAllowedMimeTypes(), form.getMimeType()))
+                || UploadChecks.containsMime(policy.getBlockedMimeTypes(), form.getMimeType()))
+            throw new IllegalArgumentException("MIME type not allowed by policy");
 
         // 2. Default storage
-        Storage storage = storageRepository.findByIsDefaultTrue()
+        Storage storage = ("PRIVATE".equals(form.getVisibility())
+                ? storageRepository.findByNameAndDeletedAtIsNull("private-minio") : storageRepository.findByIsDefaultTrue())
                 .orElseThrow(() -> new IllegalArgumentException("Default storage not configured"));
+        if (storage.getDeletedAt() != null || !"ACTIVE".equals(storage.getStatus()))
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "Upload storage unavailable");
+        if ("PRIVATE".equals(form.getVisibility())) storageGuard.requirePrivate(storage);
 
         // 3. Create Media
         UUID mediaId = UUID.randomUUID();
-        String extension = "";
-        if (form.getFileName() != null && form.getFileName().contains(".")) {
-            extension = form.getFileName().substring(form.getFileName().lastIndexOf('.') + 1);
-        }
+        String extension = UploadChecks.extension(form.getFileName());
 
         String mediaType = "OTHER";
         if (form.getMimeType() != null) {
-            String primaryType = form.getMimeType().split("/")[0].toUpperCase();
+            String primaryType = form.getMimeType().split("/")[0].toUpperCase(java.util.Locale.ROOT);
             if (primaryType.equals("IMAGE") || primaryType.equals("VIDEO") || primaryType.equals("AUDIO")) {
                 mediaType = primaryType;
             } else if (form.getMimeType().contains("pdf") || form.getMimeType().contains("word") || form.getMimeType().contains("excel") || form.getMimeType().contains("powerpoint") || form.getMimeType().contains("office")) {
@@ -137,6 +156,7 @@ public class UploadService {
                 .sizeBytes(form.getSizeBytes())
                 .mediaType(mediaType)
                 .visibility(form.getVisibility())
+                .uploadTargetType(form.getTargetType())
                 .status(MediaStatus.UPLOADING)
                 .metadata("{}")
                 .createdAt(OffsetDateTime.now(ZoneOffset.UTC))
@@ -190,14 +210,20 @@ public class UploadService {
 
     @Transactional
     public ConfirmUploadResponse confirmUpload(UUID sessionId, String uploaderId) {
-        log.info("confirmUpload called for sessionId: {}, uploaderId: {}", sessionId, uploaderId);
-        UploadSession session = uploadSessionRepository.findById(sessionId)
+        var actor = MediaAccess.require("media:upload");
+        MediaAccess.actorHint(MediaJwtVerifier.canonicalUuid(uploaderId), actor);
+        UploadSession session = uploadSessionRepository.findByIdForUpdate(sessionId)
                 .orElseThrow(() -> new IllegalArgumentException("Upload session not found"));
-
-        if (session.getStatus() != UploadSessionStatus.PENDING) {
-            log.warn("Upload session not in PENDING state. Current state: {}", session.getStatus());
-            throw new IllegalStateException("Upload session not in PENDING state");
-        }
+        if (!actor.userId().equals(session.getUploaderId())) throw new SecurityException("Upload session access denied");
+        if (session.getDeletedAt() != null) throw new IllegalArgumentException("Upload session deleted");
+        if (session.getStatus() == UploadSessionStatus.UPLOADING || session.getStatus() == UploadSessionStatus.COMPLETED)
+            return ConfirmUploadResponse.builder().sessionId(sessionId.toString()).mediaId(session.getMediaId().toString()).build();
+        if (session.getStatus() != UploadSessionStatus.PENDING)
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Upload session cannot be confirmed");
+        Media targetMedia = mediaRepository.findById(session.getMediaId()).orElseThrow(() -> new IllegalArgumentException("Upload media not found"));
+        if (targetMedia.getDeletedAt() != null || !actor.userId().equals(targetMedia.getCreatedBy())) throw new SecurityException("Upload media access denied");
+        if (targetMedia.getUploadTargetType() != null && !"USER".equals(targetMedia.getUploadTargetType()) && !actor.manager())
+            throw new SecurityException("Administrative upload target required");
 
         // Lock session
         log.info("Changing session status to UPLOADING for sessionId: {}", sessionId);
@@ -219,11 +245,13 @@ public class UploadService {
     @Transactional
     public void verifyUpload(UUID sessionId, UUID mediaId) {
         log.info("verifyUpload started for sessionId: {}, mediaId: {}", sessionId, mediaId);
-        UploadSession session = uploadSessionRepository.findById(sessionId).orElse(null);
+        UploadSession session = uploadSessionRepository.findByIdForUpdate(sessionId).orElse(null);
         if (session == null) {
             log.error("verifyUpload failed: Session not found for sessionId: {}", sessionId);
             return;
         }
+        if (session.getDeletedAt() != null || !java.util.Objects.equals(mediaId, session.getMediaId())
+                || session.getStatus() != UploadSessionStatus.UPLOADING) return;
 
         Media media = mediaRepository.findById(mediaId).orElse(null);
         if (media == null) {
@@ -262,10 +290,11 @@ public class UploadService {
 
             log.info("statObject success. File size in MinIO: {}, Expected size: {}", stat.size(), media.getSizeBytes());
 
-            if (stat.size() != media.getSizeBytes()) {
+            boolean simulationMimeMismatch = MediaAccess.simulation(media.getUploadTargetType()) && !media.getMimeType().equals(stat.contentType());
+            if (stat.size() != media.getSizeBytes() || simulationMimeMismatch) {
                 log.warn("File size mismatch! Updating status to FAILED.");
                 session.setStatus(UploadSessionStatus.FAILED);
-                session.setFailureReason(String.format("File size mismatch: expected %d bytes, got %d bytes", media.getSizeBytes(), stat.size()));
+                session.setFailureReason(simulationMimeMismatch ? "Simulation content type mismatch" : String.format("File size mismatch: expected %d bytes, got %d bytes", media.getSizeBytes(), stat.size()));
                 session.setFinishedAt(OffsetDateTime.now(ZoneOffset.UTC));
                 session.setUpdatedAt(OffsetDateTime.now(ZoneOffset.UTC));
                 uploadSessionRepository.save(session);

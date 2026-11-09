@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface StorageRepository extends JpaRepository<Storage, UUID> {
     Optional<Storage> findByIsDefaultTrue();
+    Optional<Storage> findByNameAndDeletedAtIsNull(String name);
 }

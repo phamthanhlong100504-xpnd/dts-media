@@ -19,6 +19,10 @@ import io.minio.MinioClient;
 import io.minio.StatObjectArgs;
 import io.minio.StatObjectResponse;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
+import com.dts.media.security.MediaTestActors;
+import org.springframework.security.core.context.SecurityContextHolder;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -40,6 +44,8 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class UploadServiceTest {
+
+    @Mock private MediaStorageGuard storageGuard;
 
     @Mock
     private MediaRepository mediaRepository;
@@ -85,12 +91,14 @@ class UploadServiceTest {
         ReflectionTestUtils.setField(uploadService, "internalMinioClient", internalMinioClient);
 
         uploaderId = UUID.randomUUID();
+        MediaTestActors.set(uploaderId, Set.of("ROLE_STUDENT"), "media:upload");
         sessionId = UUID.randomUUID();
         mediaId = UUID.randomUUID();
         storageId = UUID.randomUUID();
 
         policy = UploadPolicy.builder()
-                .targetType("AVATAR")
+                .targetType("USER")
+                .enabled(true).visibility("PRIVATE").allowedMimeTypes("[\"image/png\"]").blockedMimeTypes("[]")
                 .maxFileSize(10000000L)
                 .build();
 
@@ -98,14 +106,14 @@ class UploadServiceTest {
                 .id(storageId)
                 .bucket("dts-bucket")
                 .endpoint("http://localhost:9000")
-                .isDefault(true)
+                .isDefault(true).status("ACTIVE")
                 .build();
 
         media = Media.builder()
                 .id(mediaId)
                 .storageId(storageId)
                 .sizeBytes(1024L)
-                .status(MediaStatus.UPLOADING)
+                .status(MediaStatus.UPLOADING).createdBy(uploaderId)
                 .objectKey("test-object-key")
                 .build();
 
@@ -124,10 +132,10 @@ class UploadServiceTest {
     @Test
     @DisplayName("initializeUpload - Path 1: Invalid Uploader UUID")
     void initializeUpload_InvalidUploaderId() {
-        InitializeUploadForm form = new InitializeUploadForm();
-        form.setTargetType("AVATAR");
+        InitializeUploadForm form = validForm();
+        form.setTargetType("USER");
 
-        when(uploadPolicyRepository.findByTargetType("AVATAR")).thenReturn(Optional.of(policy));
+        when(uploadPolicyRepository.findByTargetTypeAndDeletedAtIsNull("USER")).thenReturn(Optional.of(policy));
 
         assertThrows(IllegalArgumentException.class, () -> uploadService.initializeUpload(form, "invalid-uuid"));
     }
@@ -135,12 +143,12 @@ class UploadServiceTest {
     @Test
     @DisplayName("initializeUpload - Path 2: Exceeds Size Limit")
     void initializeUpload_ExceedsSizeLimit() {
-        InitializeUploadForm form = new InitializeUploadForm();
-        form.setTargetType("AVATAR");
+        InitializeUploadForm form = validForm();
+        form.setTargetType("USER");
         form.setSizeBytes(20000000L); // Limit is 10M
 
         policy.setMaxFileSize(10000000L);
-        when(uploadPolicyRepository.findByTargetType("AVATAR")).thenReturn(Optional.of(policy));
+        when(uploadPolicyRepository.findByTargetTypeAndDeletedAtIsNull("USER")).thenReturn(Optional.of(policy));
 
         assertThrows(IllegalArgumentException.class, () -> uploadService.initializeUpload(form, uploaderId.toString()));
     }
@@ -148,14 +156,14 @@ class UploadServiceTest {
     @Test
     @DisplayName("initializeUpload - Path 3: Happy Case")
     void initializeUpload_HappyCase() throws Exception {
-        InitializeUploadForm form = new InitializeUploadForm();
-        form.setTargetType("AVATAR");
+        InitializeUploadForm form = validForm();
+        form.setTargetType("USER");
         form.setSizeBytes(1024L);
         form.setFileName("test.png");
         form.setMimeType("image/png");
 
-        when(uploadPolicyRepository.findByTargetType("AVATAR")).thenReturn(Optional.of(policy));
-        when(storageRepository.findByIsDefaultTrue()).thenReturn(Optional.of(storage));
+        when(uploadPolicyRepository.findByTargetTypeAndDeletedAtIsNull("USER")).thenReturn(Optional.of(policy));
+        when(storageRepository.findByNameAndDeletedAtIsNull("private-minio")).thenReturn(Optional.of(storage));
         when(minioClient.getPresignedObjectUrl(any(GetPresignedObjectUrlArgs.class))).thenReturn("http://presigned-url");
 
         InitializeUploadResponse response = uploadService.initializeUpload(form, uploaderId.toString());
@@ -175,25 +183,29 @@ class UploadServiceTest {
     @Test
     @DisplayName("confirmUpload - Path 1: Session Not Found")
     void confirmUpload_SessionNotFound() {
-        when(uploadSessionRepository.findById(sessionId)).thenReturn(Optional.empty());
+        when(uploadSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.empty());
 
         assertThrows(IllegalArgumentException.class, () -> uploadService.confirmUpload(sessionId, uploaderId.toString()));
     }
 
     @Test
-    @DisplayName("confirmUpload - Path 2: Not PENDING")
-    void confirmUpload_NotPending() {
+    @DisplayName("confirmUpload - repeated UPLOADING returns the same receipt")
+    void confirmUpload_RepeatedUploadingIsIdempotent() {
         session.setStatus(UploadSessionStatus.UPLOADING);
-        when(uploadSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(uploadSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
 
-        assertThrows(IllegalStateException.class, () -> uploadService.confirmUpload(sessionId, uploaderId.toString()));
+        ConfirmUploadResponse result = uploadService.confirmUpload(sessionId, uploaderId.toString());
+        assertEquals(mediaId.toString(), result.getMediaId());
+        verifyNoInteractions(applicationEventPublisher);
+        verify(uploadSessionRepository, never()).save(any());
     }
 
     @Test
     @DisplayName("confirmUpload - Path 3: Happy Case")
     void confirmUpload_HappyCase() {
-        when(uploadSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        when(uploadSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
 
+        when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         ConfirmUploadResponse response = uploadService.confirmUpload(sessionId, uploaderId.toString());
 
         assertNotNull(response);
@@ -211,7 +223,8 @@ class UploadServiceTest {
     @Test
     @DisplayName("verifyUpload - Path 1: Session Not Found")
     void verifyUpload_SessionNotFound() {
-        when(uploadSessionRepository.findById(sessionId)).thenReturn(Optional.empty());
+        session.setStatus(UploadSessionStatus.UPLOADING);
+        when(uploadSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.empty());
         uploadService.verifyUpload(sessionId, mediaId);
         verify(mediaRepository, never()).findById(any());
     }
@@ -219,7 +232,8 @@ class UploadServiceTest {
     @Test
     @DisplayName("verifyUpload - Path 2: Media Not Found")
     void verifyUpload_MediaNotFound() {
-        when(uploadSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        session.setStatus(UploadSessionStatus.UPLOADING);
+        when(uploadSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.empty());
 
         uploadService.verifyUpload(sessionId, mediaId);
@@ -231,7 +245,8 @@ class UploadServiceTest {
     @Test
     @DisplayName("verifyUpload - Path 3: Exception accessing MinIO")
     void verifyUpload_MinioException() throws Exception {
-        when(uploadSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        session.setStatus(UploadSessionStatus.UPLOADING);
+        when(uploadSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         when(storageRepository.findById(storageId)).thenReturn(Optional.of(storage));
         when(internalMinioClient.statObject(any(StatObjectArgs.class))).thenThrow(new RuntimeException("MinIO Error"));
@@ -247,7 +262,8 @@ class UploadServiceTest {
     @Test
     @DisplayName("verifyUpload - Path 4: Happy Case (Size Matched)")
     void verifyUpload_HappyCase() throws Exception {
-        when(uploadSessionRepository.findById(sessionId)).thenReturn(Optional.of(session));
+        session.setStatus(UploadSessionStatus.UPLOADING);
+        when(uploadSessionRepository.findByIdForUpdate(sessionId)).thenReturn(Optional.of(session));
         when(mediaRepository.findById(mediaId)).thenReturn(Optional.of(media));
         when(storageRepository.findById(storageId)).thenReturn(Optional.of(storage));
         
@@ -262,4 +278,10 @@ class UploadServiceTest {
         verify(uploadSessionRepository).save(session);
         verify(mediaRepository).save(media);
     }
+    private InitializeUploadForm validForm() {
+        InitializeUploadForm form = new InitializeUploadForm();
+        form.setTargetType("USER"); form.setFileName("test.png"); form.setMimeType("image/png");
+        form.setSizeBytes(1024L); form.setVisibility("PRIVATE"); return form;
+    }
+    @AfterEach void clearActor() { SecurityContextHolder.clearContext(); }
 }

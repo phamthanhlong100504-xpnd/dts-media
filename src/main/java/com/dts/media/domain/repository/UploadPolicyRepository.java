@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface UploadPolicyRepository extends JpaRepository<UploadPolicy, UUID> {
     Optional<UploadPolicy> findByTargetType(String targetType);
+    Optional<UploadPolicy> findByTargetTypeAndDeletedAtIsNull(String targetType);
 }
