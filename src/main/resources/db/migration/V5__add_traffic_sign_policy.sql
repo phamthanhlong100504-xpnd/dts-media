@@ -13,7 +13,9 @@ CHECK (
         'TENANT',
         'QUESTION',
         'EXAM',
-        'TRAFFIC_SIGN'
+        'TRAFFIC_SIGN',
+        'SIMULATION_VIDEO',
+        'SIMULATION_THUMBNAIL'
     )
 );
 
@@ -39,4 +41,5 @@ VALUES (
     'PUBLIC',
     '{}'::jsonb,
     '0190ce1a-0000-7000-8000-000000000000'::uuid
-);
+)
+ON CONFLICT (id) DO NOTHING;
