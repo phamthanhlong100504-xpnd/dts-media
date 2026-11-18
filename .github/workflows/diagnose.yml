@@ -6,33 +6,59 @@ on:
     paths:
       - '.github/workflows/diagnose.yml'
 
+permissions:
+  contents: write
+
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect VPS 1
-        uses: appleboy/ssh-action@v1.2.2
-        with:
-          host: ${{ secrets.VPS_HOST }}
-          username: ${{ secrets.VPS_USER }}
-          password: ${{ secrets.VPS_PASSWORD }}
-          script: |
-            echo "=== DOCKER CONTAINERS ON VPS 1 ==="
-            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-            
-            echo "=== RECENT MEDIA SERVICE LOGS ==="
-            docker logs media-service --tail 100 2>&1
-            
-            echo "=== MEDIAS TABLE SUMMARY ==="
-            docker exec $(docker ps -q -f name=postgres) psql -U postgres -d media -c "SELECT count(*), visibility, upload_target_type, media_type, status FROM medias GROUP BY visibility, upload_target_type, media_type, status;" 2>&1 || true
-            
-            echo "=== SAMPLE SIMULATION WEBP / MEDIA RECORDS ==="
-            docker exec $(docker ps -q -f name=postgres) psql -U postgres -d media -c "SELECT id, original_filename, mime_type, media_type, visibility, upload_target_type, status, storage_id FROM medias WHERE mime_type = 'image/webp' OR original_filename LIKE '%.webp' LIMIT 10;" 2>&1 || true
+      - name: Checkout
+        uses: actions/checkout@v4
 
-            echo "=== STORAGES TABLE ==="
-            docker exec $(docker ps -q -f name=postgres) psql -U postgres -d media -c "SELECT * FROM storages;" 2>&1 || true
+      - name: Run SSH to VPS 1
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
+        run: |
+          sudo apt-get update -y && sudo apt-get install -y sshpass
+          export SSHPASS="$VPS_PASSWORD"
+          sshpass -e ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST" 'bash -s' << 'EOF' > output.txt 2>&1
+          echo "=== DOCKER PS ==="
+          docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+          
+          echo "=== RECENT MEDIA SERVICE LOGS ==="
+          docker logs media-service --tail 150 2>&1
+          
+          echo "=== POSTGRES CONTAINER ==="
+          docker ps -a --filter name=postgres
+          
+          echo "=== MEDIAS TABLE COUNTS ==="
+          docker exec dts-postgres psql -U postgres -d media -c "SELECT count(*), visibility, upload_target_type, media_type, status FROM medias GROUP BY visibility, upload_target_type, media_type, status;" 2>&1 || true
+          
+          echo "=== SAMPLE WEBP / THUMBNAIL MEDIAS ==="
+          docker exec dts-postgres psql -U postgres -d media -c "SELECT id, original_filename, mime_type, media_type, visibility, upload_target_type, status, storage_id FROM medias WHERE mime_type = 'image/webp' OR original_filename LIKE '%.webp' LIMIT 15;" 2>&1 || true
 
-            echo "=== MINIO BUCKETS ==="
-            docker exec media-minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>&1 || true
-            docker exec media-minio mc ls local 2>&1 || true
-            docker exec media-minio mc anonymous get local/media-private 2>&1 || true
+          echo "=== ALL MEDIAS WITH SIMULATION IN TARGET TYPE ==="
+          docker exec dts-postgres psql -U postgres -d media -c "SELECT id, original_filename, mime_type, media_type, visibility, upload_target_type, status, storage_id FROM medias WHERE upload_target_type LIKE '%SIMULATION%' LIMIT 15;" 2>&1 || true
+
+          echo "=== STORAGES TABLE ==="
+          docker exec dts-postgres psql -U postgres -d media -c "SELECT * FROM storages;" 2>&1 || true
+
+          echo "=== MINIO BUCKETS & POLICIES ==="
+          docker exec media-minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>&1 || true
+          docker exec media-minio mc ls local 2>&1 || true
+          docker exec media-minio mc anonymous get local/media-private 2>&1 || true
+          docker exec media-minio mc anonymous get local/media-public 2>&1 || true
+          docker exec media-minio mc anonymous get-json local/media-private 2>&1 || true
+          EOF
+
+      - name: Push Output to Branch
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git checkout -B diagnose-output
+          git add output.txt
+          git commit -m "diagnose output $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          git push -f origin diagnose-output
