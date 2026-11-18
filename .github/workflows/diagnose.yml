@@ -17,6 +17,72 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Run Diagnostics and Fix on VPS 1
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            echo "=== 1. UPDATE THUMBNAIL VISIBILITY IN POSTGRES ==="
+            docker exec dts-postgres psql -U postgres -d media -c "UPDATE medias SET visibility = 'PRIVATE' WHERE upload_target_type = 'SIMULATION_THUMBNAIL';"
+            
+            echo "=== 2. VERIFY COUNTS IN POSTGRES ==="
+            docker exec dts-postgres psql -U postgres -d media -c "SELECT count(*), visibility, upload_target_type FROM medias WHERE upload_target_type = 'SIMULATION_THUMBNAIL' GROUP BY visibility, upload_target_type;"
+
+            echo "=== 3. GENERATE FRESH JWT TOKEN VIA PYTHON ==="
+            python3 -c "
+            import hmac, hashlib, base64, json, time, uuid, subprocess
+            secret = subprocess.check_output(['docker', 'exec', 'dts-identity-service', 'printenv', 'JWT_ACCESS_SECRET']).decode().strip()
+            def b64url(d):
+                if isinstance(d, str): d = d.encode('utf-8')
+                return base64.urlsafe_b64encode(d).decode('utf-8').rstrip('=')
+            def decode_sec(s):
+                try: return base64.b64decode(s)
+                except:
+                    try: return base64.urlsafe_b64decode(s + '=' * (-len(s) % 4))
+                    except: return s.encode('utf-8')
+            key = decode_sec(secret)
+            if len(key) < 32: key = hashlib.sha256(key).digest()
+            header = {'alg': 'HS384', 'typ': 'JWT'}
+            now = int(time.time())
+            payload = {
+                'iss': 'dts-identity-service',
+                'sub': '870810b3-b42f-4efc-aef8-605534e7bc24',
+                'username': 'longpt',
+                'roles': ['ROLE_ADMIN', 'ROLE_STUDENT'],
+                'permissions': [
+                    'questions:read', 'analytics:read', 'exams:read', 'progress:read', 'progress:update',
+                    'practice:read', 'practice:learn', 'practice:exam', 'simulations:read', 'simulations:learn',
+                    'media:read', 'media:upload', 'traffic-signs:read', 'memory-tips:read', 'simulations:exam',
+                    'media:manage', 'media:update', 'media:delete'
+                ],
+                'iat': now,
+                'exp': now + 86400,
+                'jti': str(uuid.uuid4())
+            }
+            h = b64url(json.dumps(header, separators=(',', ':')))
+            p = b64url(json.dumps(payload, separators=(',', ':')))
+            sig = b64url(hmac.new(key, f'{h}.{p}'.encode('utf-8'), hashlib.sha384).digest())
+            token = f'{h}.{p}.{sig}'
+            with open('/tmp/test_token.txt', 'w') as f: f.write(token)
+            print('TOKEN_CREATED_SUCCESS')
+            "
+
+            TOKEN=$(cat /tmp/test_token.txt)
+            echo "Token prefix: ${TOKEN:0:30}..."
+
+            echo "=== 4. TEST SIMULATION API ENDPOINT ==="
+            curl -i -s "http://103.20.96.85:3000/api/practice/v1/simulations/chapters/1/scenarios?licenseClass=B&bankVersion=dts-simulation-120-video-v1&filter=ALL&sort=SCENARIO_ASC&page=0&size=12" \
+              -H "Authorization: Bearer $TOKEN" \
+              -H "Accept: application/json" > /tmp/api_response.txt
+
+            head -n 50 /tmp/api_response.txt
+
+            echo "=== 5. CHECK RECENT MEDIA SERVICE LOGS ==="
+            docker logs media-service --tail 20 2>&1
+
+      - name: Fetch Results from VPS 1
+        if: always()
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
@@ -24,82 +90,11 @@ jobs:
         run: |
           sudo apt-get update -y && sudo apt-get install -y sshpass
           export SSHPASS="$VPS_PASSWORD"
-          sshpass -e ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST" 'bash -s' << 'EOF' > output.txt 2>&1
-          echo "=== 1. UPDATE THUMBNAIL VISIBILITY IN POSTGRES ==="
-          docker exec dts-postgres psql -U postgres -d media -c "UPDATE medias SET visibility = 'PRIVATE' WHERE upload_target_type = 'SIMULATION_THUMBNAIL';"
-          
-          echo "=== 2. VERIFY COUNTS IN POSTGRES ==="
-          docker exec dts-postgres psql -U postgres -d media -c "SELECT count(*), visibility, upload_target_type FROM medias WHERE upload_target_type = 'SIMULATION_THUMBNAIL' GROUP BY visibility, upload_target_type;"
-
-          echo "=== 3. GET IDENTITY SECRET AND CREATE SCRIPT ==="
-          SECRET=$(docker exec dts-identity-service printenv JWT_ACCESS_SECRET)
-          echo "Secret length: ${#SECRET}"
-
-          cat << 'PYEOF' > /tmp/gen_token.py
-import hmac, hashlib, base64, json, time, uuid, sys
-
-def b64url(data):
-    if isinstance(data, str):
-        data = data.encode('utf-8')
-    return base64.urlsafe_b64encode(data).decode('utf-8').rstrip('=')
-
-def decode_secret(secret):
-    try:
-        return base64.b64decode(secret)
-    except Exception:
-        try:
-            return base64.urlsafe_b64decode(secret + '=' * (-len(secret) % 4))
-        except Exception:
-            return secret.encode('utf-8')
-
-secret = sys.argv[1].strip()
-key = decode_secret(secret)
-if len(key) < 32:
-    key = hashlib.sha256(key).digest()
-
-header = {"alg": "HS384", "typ": "JWT"}
-now = int(time.time())
-payload = {
-    "iss": "dts-identity-service",
-    "sub": "870810b3-b42f-4efc-aef8-605534e7bc24",
-    "username": "longpt",
-    "roles": ["ROLE_ADMIN", "ROLE_STUDENT"],
-    "permissions": [
-        "questions:read", "analytics:read", "exams:read", "progress:read", "progress:update",
-        "practice:read", "practice:learn", "practice:exam", "simulations:read", "simulations:learn",
-        "media:read", "media:upload", "traffic-signs:read", "memory-tips:read", "simulations:exam",
-        "media:manage", "media:update", "media:delete"
-    ],
-    "iat": now,
-    "exp": now + 7200,
-    "jti": str(uuid.uuid4())
-}
-h_str = b64url(json.dumps(header, separators=(',', ':')))
-p_str = b64url(json.dumps(payload, separators=(',', ':')))
-msg = f"{h_str}.{p_str}".encode('utf-8')
-sig = b64url(hmac.new(key, msg, hashlib.sha384).digest())
-print(f"{h_str}.{p_str}.{sig}")
-PYEOF
-
-          TOKEN=$(python3 /tmp/gen_token.py "$SECRET")
-          echo "Token generated: ${TOKEN:0:30}..."
-
-          echo "=== 4. TEST SIMULATION API ENDPOINT ==="
-          curl -i -s "http://103.20.96.85:3000/api/practice/v1/simulations/chapters/1/scenarios?licenseClass=B&bankVersion=dts-simulation-120-video-v1&filter=ALL&sort=SCENARIO_ASC&page=0&size=12" \
-            -H "Authorization: Bearer $TOKEN" \
-            -H "Accept: application/json"
-
-          echo ""
-          echo "=== 5. CHECK RECENT MEDIA SERVICE LOGS ==="
-          docker logs media-service --tail 25 2>&1
-          EOF
-
-      - name: Push Output to Branch
-        if: always()
-        run: |
+          sshpass -e scp -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST:/tmp/api_response.txt" api_response.txt || true
+          sshpass -e scp -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST:/tmp/test_token.txt" test_token.txt || true
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git checkout -B diagnose-output
-          git add output.txt || true
-          git commit -m "diagnose & test output $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || true
-          git push -f origin diagnose-output
+          git add api_response.txt test_token.txt || true
+          git commit -m "diagnose & test results $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || true
+          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git diagnose-output || true
