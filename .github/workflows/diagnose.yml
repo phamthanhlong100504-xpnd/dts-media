@@ -6,95 +6,20 @@ on:
     paths:
       - '.github/workflows/diagnose.yml'
 
-permissions:
-  contents: write
-
 jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Run Diagnostics and Fix on VPS 1
+      - name: Inspect MinIO Credentials
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            echo "=== 1. UPDATE THUMBNAIL VISIBILITY IN POSTGRES ==="
-            docker exec dts-postgres psql -U postgres -d media -c "UPDATE medias SET visibility = 'PRIVATE' WHERE upload_target_type = 'SIMULATION_THUMBNAIL';"
-            
-            echo "=== 2. VERIFY COUNTS IN POSTGRES ==="
-            docker exec dts-postgres psql -U postgres -d media -c "SELECT count(*), visibility, upload_target_type FROM medias WHERE upload_target_type = 'SIMULATION_THUMBNAIL' GROUP BY visibility, upload_target_type;"
-
-            echo "=== 3. GENERATE FRESH JWT TOKEN VIA PYTHON ==="
-            python3 -c "
-            import hmac, hashlib, base64, json, time, uuid, subprocess
-            secret = subprocess.check_output(['docker', 'exec', 'dts-identity-service', 'printenv', 'JWT_ACCESS_SECRET']).decode().strip()
-            def b64url(d):
-                if isinstance(d, str): d = d.encode('utf-8')
-                return base64.urlsafe_b64encode(d).decode('utf-8').rstrip('=')
-            def decode_sec(s):
-                try: return base64.b64decode(s)
-                except:
-                    try: return base64.urlsafe_b64decode(s + '=' * (-len(s) % 4))
-                    except: return s.encode('utf-8')
-            key = decode_sec(secret)
-            if len(key) < 32: key = hashlib.sha256(key).digest()
-            header = {'alg': 'HS384', 'typ': 'JWT'}
-            now = int(time.time())
-            payload = {
-                'iss': 'dts-identity-service',
-                'sub': '870810b3-b42f-4efc-aef8-605534e7bc24',
-                'username': 'longpt',
-                'roles': ['ROLE_ADMIN', 'ROLE_STUDENT'],
-                'permissions': [
-                    'questions:read', 'analytics:read', 'exams:read', 'progress:read', 'progress:update',
-                    'practice:read', 'practice:learn', 'practice:exam', 'simulations:read', 'simulations:learn',
-                    'media:read', 'media:upload', 'traffic-signs:read', 'memory-tips:read', 'simulations:exam',
-                    'media:manage', 'media:update', 'media:delete'
-                ],
-                'iat': now,
-                'exp': now + 86400,
-                'jti': str(uuid.uuid4())
-            }
-            h = b64url(json.dumps(header, separators=(',', ':')))
-            p = b64url(json.dumps(payload, separators=(',', ':')))
-            sig = b64url(hmac.new(key, f'{h}.{p}'.encode('utf-8'), hashlib.sha384).digest())
-            token = f'{h}.{p}.{sig}'
-            with open('/tmp/test_token.txt', 'w') as f: f.write(token)
-            print('TOKEN_CREATED_SUCCESS')
-            "
-
-            TOKEN=$(cat /tmp/test_token.txt)
-            echo "Token prefix: ${TOKEN:0:30}..."
-
-            echo "=== 4. TEST SIMULATION API ENDPOINT ==="
-            curl -i -s "http://103.20.96.85:3000/api/practice/v1/simulations/chapters/1/scenarios?licenseClass=B&bankVersion=dts-simulation-120-video-v1&filter=ALL&sort=SCENARIO_ASC&page=0&size=12" \
-              -H "Authorization: Bearer $TOKEN" \
-              -H "Accept: application/json" > /tmp/api_response.txt
-
-            head -n 50 /tmp/api_response.txt
-
-            echo "=== 5. CHECK RECENT MEDIA SERVICE LOGS ==="
-            docker logs media-service --tail 20 2>&1
-
-      - name: Fetch Results from VPS 1
-        if: always()
-        env:
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          VPS_PASSWORD: ${{ secrets.VPS_PASSWORD }}
-        run: |
-          sudo apt-get update -y && sudo apt-get install -y sshpass
-          export SSHPASS="$VPS_PASSWORD"
-          sshpass -e scp -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST:/tmp/api_response.txt" api_response.txt || true
-          sshpass -e scp -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST:/tmp/test_token.txt" test_token.txt || true
-          git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
-          git checkout -B diagnose-output
-          git add api_response.txt test_token.txt || true
-          git commit -m "diagnose & test results $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || true
-          git push -f https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git diagnose-output || true
+            echo "=== MEDIA-MINIO ENV ==="
+            docker exec media-minio env | grep -i minio
+            echo "=== MEDIA-SERVICE ENV ==="
+            docker exec media-service env | grep -i minio
+            echo "=== TEST DIRECT GET OBJECT ==="
+            docker exec media-service python3 -c "print('test')" 2>&1 || true
