@@ -124,8 +124,16 @@ jobs:
             docker load -i minio.tar
             rm -f minio.tar
             
-            # Inject JWT secret into .env for media-service
-            echo "JWT_ACCESS_SECRET=$JWT_ACCESS_SECRET" > .env
+            # Inject JWT secret: from GitHub Secret or fallback to /dts/practice-service/.env on VPS
+            if [ -n "$JWT_ACCESS_SECRET" ]; then
+              echo "JWT_ACCESS_SECRET=$JWT_ACCESS_SECRET" > .env
+            elif [ -f /dts/practice-service/.env ]; then
+              JWT_SECRET=$(grep "^JWT_ACCESS_SECRET=" /dts/practice-service/.env | head -n 1 | cut -d '=' -f2-)
+              if [ -n "$JWT_SECRET" ]; then
+                echo "JWT_ACCESS_SECRET=$JWT_SECRET" > .env
+                echo "Successfully copied JWT_ACCESS_SECRET from /dts/practice-service/.env"
+              fi
+            fi
             
             # Login to GHCR to pull our private images
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -135,8 +143,11 @@ jobs:
             docker logout ghcr.io || true
             docker compose pull zookeeper kafka || true
             
-            # Start all services
+            # Start all services and force recreate media-service to apply new env
+            docker compose up -d --force-recreate media-service
             docker compose up -d
+            docker restart dts-practice-service || true
+            echo "Media-service JWT_ACCESS_SECRET length: $(docker exec media-service printenv JWT_ACCESS_SECRET | wc -c)"
             echo "=== MEDIA SERVICE LOGS ==="
             docker logs media-service --tail 50 || true
             docker image prune -a -f
