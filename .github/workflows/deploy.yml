@@ -113,6 +113,7 @@ jobs:
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
             set -e
+            docker network create dts-network || true
             cd /dts/media
             mv -f docker-compose.prod.yml docker-compose.yml
             

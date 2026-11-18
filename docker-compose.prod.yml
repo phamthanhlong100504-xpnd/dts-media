@@ -75,6 +75,12 @@ services:
       - "103.20.96.85:host-gateway"
     networks:
       - default
+      - dts-network
+
+networks:
+  default:
+  dts-network:
+    external: true
 
 volumes:
   minio_data:
