@@ -1,0 +1,38 @@
+name: Media Diagnostics VPS 1
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/diagnose.yml'
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Inspect VPS 1
+        uses: appleboy/ssh-action@v1.2.2
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ${{ secrets.VPS_USER }}
+          password: ${{ secrets.VPS_PASSWORD }}
+          script: |
+            echo "=== DOCKER CONTAINERS ON VPS 1 ==="
+            docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+            
+            echo "=== RECENT MEDIA SERVICE LOGS ==="
+            docker logs media-service --tail 100 2>&1
+            
+            echo "=== MEDIAS TABLE SUMMARY ==="
+            docker exec $(docker ps -q -f name=postgres) psql -U postgres -d media -c "SELECT count(*), visibility, upload_target_type, media_type, status FROM medias GROUP BY visibility, upload_target_type, media_type, status;" 2>&1 || true
+            
+            echo "=== SAMPLE SIMULATION WEBP / MEDIA RECORDS ==="
+            docker exec $(docker ps -q -f name=postgres) psql -U postgres -d media -c "SELECT id, original_filename, mime_type, media_type, visibility, upload_target_type, status, storage_id FROM medias WHERE mime_type = 'image/webp' OR original_filename LIKE '%.webp' LIMIT 10;" 2>&1 || true
+
+            echo "=== STORAGES TABLE ==="
+            docker exec $(docker ps -q -f name=postgres) psql -U postgres -d media -c "SELECT * FROM storages;" 2>&1 || true
+
+            echo "=== MINIO BUCKETS ==="
+            docker exec media-minio mc alias set local http://localhost:9000 minioadmin minioadmin 2>&1 || true
+            docker exec media-minio mc ls local 2>&1 || true
+            docker exec media-minio mc anonymous get local/media-private 2>&1 || true
