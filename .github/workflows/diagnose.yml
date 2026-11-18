@@ -25,83 +25,81 @@ jobs:
           sudo apt-get update -y && sudo apt-get install -y sshpass
           export SSHPASS="$VPS_PASSWORD"
           sshpass -e ssh -o StrictHostKeyChecking=no "$VPS_USER@$VPS_HOST" 'bash -s' << 'EOF' > output.txt 2>&1
-          set -e
           echo "=== 1. UPDATE THUMBNAIL VISIBILITY IN POSTGRES ==="
           docker exec dts-postgres psql -U postgres -d media -c "UPDATE medias SET visibility = 'PRIVATE' WHERE upload_target_type = 'SIMULATION_THUMBNAIL';"
           
           echo "=== 2. VERIFY COUNTS IN POSTGRES ==="
           docker exec dts-postgres psql -U postgres -d media -c "SELECT count(*), visibility, upload_target_type FROM medias WHERE upload_target_type = 'SIMULATION_THUMBNAIL' GROUP BY visibility, upload_target_type;"
 
-          echo "=== 3. GENERATE FRESH JWT TOKEN ==="
+          echo "=== 3. GET IDENTITY SECRET AND CREATE SCRIPT ==="
           SECRET=$(docker exec dts-identity-service printenv JWT_ACCESS_SECRET)
           echo "Secret length: ${#SECRET}"
-          
-          TOKEN=$(python3 - << PYEOF
-          import hmac, hashlib, base64, json, time, uuid
 
-          def b64url(data):
-              if isinstance(data, str):
-                  data = data.encode('utf-8')
-              return base64.urlsafe_b64encode(data).decode('utf-8').rstrip('=')
+          cat << 'PYEOF' > /tmp/gen_token.py
+import hmac, hashlib, base64, json, time, uuid, sys
 
-          def decode_secret(secret):
-              try:
-                  return base64.b64decode(secret)
-              except Exception:
-                  try:
-                      return base64.urlsafe_b64decode(secret + '=' * (-len(secret) % 4))
-                  except Exception:
-                      return secret.encode('utf-8')
+def b64url(data):
+    if isinstance(data, str):
+        data = data.encode('utf-8')
+    return base64.urlsafe_b64encode(data).decode('utf-8').rstrip('=')
 
-          secret = "$SECRET".strip()
-          key = decode_secret(secret)
-          if len(key) < 32:
-              key = hashlib.sha256(key).digest()
+def decode_secret(secret):
+    try:
+        return base64.b64decode(secret)
+    except Exception:
+        try:
+            return base64.urlsafe_b64decode(secret + '=' * (-len(secret) % 4))
+        except Exception:
+            return secret.encode('utf-8')
 
-          header = {"alg": "HS384", "typ": "JWT"}
-          now = int(time.time())
-          payload = {
-              "iss": "dts-identity-service",
-              "sub": "870810b3-b42f-4efc-aef8-605534e7bc24",
-              "username": "longpt",
-              "roles": ["ROLE_ADMIN", "ROLE_STUDENT"],
-              "permissions": [
-                  "questions:read", "analytics:read", "exams:read", "progress:read", "progress:update",
-                  "practice:read", "practice:learn", "practice:exam", "simulations:read", "simulations:learn",
-                  "media:read", "media:upload", "traffic-signs:read", "memory-tips:read", "simulations:exam",
-                  "media:manage", "media:update", "media:delete"
-              ],
-              "iat": now,
-              "exp": now + 7200,
-              "jti": str(uuid.uuid4())
-          }
-          h_str = b64url(json.dumps(header, separators=(',', ':')))
-          p_str = b64url(json.dumps(payload, separators=(',', ':')))
-          msg = f"{h_str}.{p_str}".encode('utf-8')
-          sig = b64url(hmac.new(key, msg, hashlib.sha384).digest())
-          print(f"{h_str}.{p_str}.{sig}")
-          PYEOF
-          )
-          echo "Token prefix: ${TOKEN:0:30}..."
+secret = sys.argv[1].strip()
+key = decode_secret(secret)
+if len(key) < 32:
+    key = hashlib.sha256(key).digest()
+
+header = {"alg": "HS384", "typ": "JWT"}
+now = int(time.time())
+payload = {
+    "iss": "dts-identity-service",
+    "sub": "870810b3-b42f-4efc-aef8-605534e7bc24",
+    "username": "longpt",
+    "roles": ["ROLE_ADMIN", "ROLE_STUDENT"],
+    "permissions": [
+        "questions:read", "analytics:read", "exams:read", "progress:read", "progress:update",
+        "practice:read", "practice:learn", "practice:exam", "simulations:read", "simulations:learn",
+        "media:read", "media:upload", "traffic-signs:read", "memory-tips:read", "simulations:exam",
+        "media:manage", "media:update", "media:delete"
+    ],
+    "iat": now,
+    "exp": now + 7200,
+    "jti": str(uuid.uuid4())
+}
+h_str = b64url(json.dumps(header, separators=(',', ':')))
+p_str = b64url(json.dumps(payload, separators=(',', ':')))
+msg = f"{h_str}.{p_str}".encode('utf-8')
+sig = b64url(hmac.new(key, msg, hashlib.sha384).digest())
+print(f"{h_str}.{p_str}.{sig}")
+PYEOF
+
+          TOKEN=$(python3 /tmp/gen_token.py "$SECRET")
+          echo "Token generated: ${TOKEN:0:30}..."
 
           echo "=== 4. TEST SIMULATION API ENDPOINT ==="
-          HTTP_RESPONSE=$(curl -s -w "\nHTTP_STATUS_CODE:%{http_code}\n" \
-            "http://103.20.96.85:3000/api/practice/v1/simulations/chapters/1/scenarios?licenseClass=B&bankVersion=dts-simulation-120-video-v1&filter=ALL&sort=SCENARIO_ASC&page=0&size=12" \
+          curl -i -s "http://103.20.96.85:3000/api/practice/v1/simulations/chapters/1/scenarios?licenseClass=B&bankVersion=dts-simulation-120-video-v1&filter=ALL&sort=SCENARIO_ASC&page=0&size=12" \
             -H "Authorization: Bearer $TOKEN" \
-            -H "Accept: application/json")
+            -H "Accept: application/json"
 
-          echo "$HTTP_RESPONSE" | head -n 40
-          echo "$HTTP_RESPONSE" | grep "HTTP_STATUS_CODE:"
-
-          echo "=== 5. CHECK MEDIA SERVICE LOGS ==="
-          docker logs media-service --tail 30 2>&1
+          echo ""
+          echo "=== 5. CHECK RECENT MEDIA SERVICE LOGS ==="
+          docker logs media-service --tail 25 2>&1
           EOF
 
       - name: Push Output to Branch
+        if: always()
         run: |
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git checkout -B diagnose-output
-          git add output.txt
-          git commit -m "diagnose & test output $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          git add output.txt || true
+          git commit -m "diagnose & test output $(date -u +'%Y-%m-%d %H:%M:%S UTC')" || true
           git push -f origin diagnose-output
