@@ -107,10 +107,13 @@ jobs:
 
       - name: Deploy VPS
         uses: appleboy/ssh-action@v1.2.2
+        env:
+          JWT_ACCESS_SECRET: ${{ secrets.JWT_ACCESS_SECRET }}
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
+          envs: JWT_ACCESS_SECRET
           script: |
             set -e
             docker network create dts-network || true
@@ -120,6 +123,9 @@ jobs:
             # Load MinIO image directly from tarball! No compilation, no rate limits!
             docker load -i minio.tar
             rm -f minio.tar
+            
+            # Inject JWT secret into .env for media-service
+            echo "JWT_ACCESS_SECRET=$JWT_ACCESS_SECRET" > .env
             
             # Login to GHCR to pull our private images
             echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
@@ -131,4 +137,6 @@ jobs:
             
             # Start all services
             docker compose up -d
+            echo "=== MEDIA SERVICE LOGS ==="
+            docker logs media-service --tail 50 || true
             docker image prune -a -f
