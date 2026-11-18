@@ -147,7 +147,9 @@ jobs:
             docker compose up -d --force-recreate media-service
             docker compose up -d
             docker restart dts-practice-service || true
-            echo "Media-service JWT_ACCESS_SECRET length: $(docker exec media-service printenv JWT_ACCESS_SECRET | wc -c)"
-            echo "=== MEDIA SERVICE LOGS ==="
-            docker logs media-service --tail 50 || true
-            docker image prune -a -f
+            echo "=== HOST IP AND INFO ==="
+            uname -a
+            hostname -I
+            curl -s https://api.ipify.org || true
+            echo ""
+            docker ps -a --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
