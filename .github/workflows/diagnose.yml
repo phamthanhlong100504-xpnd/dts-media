@@ -10,16 +10,16 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect MinIO Credentials
+      - name: Check MinIO Logs and Files
         uses: appleboy/ssh-action@v1.2.2
         with:
           host: ${{ secrets.VPS_HOST }}
           username: ${{ secrets.VPS_USER }}
           password: ${{ secrets.VPS_PASSWORD }}
           script: |
-            echo "=== MEDIA-MINIO ENV ==="
-            docker exec media-minio env | grep -i minio
-            echo "=== MEDIA-SERVICE ENV ==="
-            docker exec media-service env | grep -i minio
-            echo "=== TEST DIRECT GET OBJECT ==="
-            docker exec media-service python3 -c "print('test')" 2>&1 || true
+            echo "=== MINIO LOGS ==="
+            docker logs media-minio --tail 50 2>&1
+            echo "=== MINIO FILES ON DISK ==="
+            docker exec media-minio ls -la /data/media/uploads/2026/10/31/ 2>&1 || true
+            echo "=== CHECK BUCKETS IN /data ==="
+            docker exec media-minio ls -la /data 2>&1 || true
